@@ -75,6 +75,7 @@ class Order(Base):
         Index("ix_orders_status", "status"),
         Index("ix_orders_appointment", "appointment_id"),
         Index("ix_orders_organization", "organization_id"),
+        Index("ix_orders_consultation_request", "consultation_request_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -118,6 +119,11 @@ class Order(Base):
     # فاز ۳۳ - B21: تقسیم سهم پرداخت سازمان — snapshot در لحظه ساخت سفارش
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True
+    )
+    # فاز ۶۹ - سفارش پرداخت آنلاین رزرو عمومی (اتصال به درخواست مشاوره)
+    consultation_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("consultation_requests.id", ondelete="SET NULL"),
+        nullable=True, unique=True,
     )
     contract_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=True

@@ -1,11 +1,32 @@
 import {
-  Avatar, Box, Card, CardContent, Chip, CircularProgress, Container, Stack, Typography,
+  Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, Container, Stack, Typography,
 } from "@mui/material";
 import { useEffect, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import { fetchPublicCounselors } from "../api";
 import type { PublicCounselor } from "../api";
 import { texts } from "../content/texts";
 import SectionTitle from "./SectionTitle";
+
+function faNum(n: number | string): string {
+  return Number(n).toLocaleString("fa-IR");
+}
+
+function Stars({ value, size = 15 }: { value: number | null; size?: number }) {
+  const v = value ?? 0;
+  return (
+    <Stack direction="row" spacing={0.25} alignItems="center">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <Box key={i} component="svg" viewBox="0 0 24 24" sx={{ width: size, height: size, display: "block" }} aria-hidden>
+          <path
+            d="M12 2.6l2.9 5.9 6.5.95-4.7 4.6 1.1 6.5L12 17.5l-5.8 3.05 1.1-6.5-4.7-4.6 6.5-.95z"
+            fill={i <= Math.round(v) ? "#f0b429" : "#eadfe3"}
+          />
+        </Box>
+      ))}
+    </Stack>
+  );
+}
 
 export default function Counselors() {
   const [items, setItems] = useState<PublicCounselor[] | null>(null);
@@ -87,6 +108,23 @@ export default function Counselors() {
                     sx={{ mt: 1.4, bgcolor: "#faeef1", color: "primary.main", fontWeight: 700, border: "1px solid #f0d9df" }}
                   />
                 )}
+                {/* فاز ۶۹: امتیاز ستاره‌دار + دکمهٔ رزرو (فهرست بر اساس امتیاز مرتب است) */}
+                <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="center" sx={{ mt: 1.2 }}>
+                  <Stars value={c.rating_avg ?? null} />
+                  <Typography variant="body2" fontWeight={700}>
+                    {c.rating_avg ? faNum(c.rating_avg) : "جدید"}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">({faNum(c.review_count)} نظر)</Typography>
+                </Stack>
+                <Button
+                  component={RouterLink}
+                  to={`/specialist/${encodeURIComponent(c.id)}`}
+                  variant="contained"
+                  size="small"
+                  sx={{ mt: 1.8, borderRadius: 99, fontWeight: 800, px: 3 }}
+                >
+                  رزرو نوبت
+                </Button>
               </CardContent>
             </Card>
           ))}

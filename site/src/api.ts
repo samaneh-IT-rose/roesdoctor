@@ -8,6 +8,9 @@ export interface PublicCounselor {
   province_code: string | null;
   province_name: string | null;
   branch_name: string | null;
+  /** فاز ۶۹: امتیاز میانگین (۱..۵، بدون نظر = null) + تعداد نظرات */
+  rating_avg: number | null;
+  review_count: number;
 }
 
 export interface SlotDay {
@@ -18,6 +21,9 @@ export interface SlotDay {
 export interface BookingResult {
   status: string;
   request_id: string;
+  /** فاز ۶۹ - اگر پرداخت آنلاین درخواست شده باشد */
+  payment?: BookingPayment;
+  payment_error?: string;
 }
 
 export async function fetchPublicCounselors(): Promise<PublicCounselor[]> {
@@ -131,6 +137,9 @@ export interface MapCounselor {
   license: string | null;
   /** فاز ۶۷: موبایل/رتبه از خروجی عمومی حذف شد؛ پرچم واجد شرط رزرو (B05) */
   bookable: boolean;
+  /** فاز ۶۹: امتیاز برای نمایش ستاره‌ها و مرتب‌سازی «بالاترین امتیاز اول» */
+  rating_avg?: number | null;
+  review_count?: number;
 }
 
 export interface MapClinic {
@@ -159,4 +168,75 @@ export async function fetchClinicsMap(): Promise<MapClinic[]> {
   const r = await fetch("/api/v1/public/clinics-map");
   if (!r.ok) throw new Error("خطا در دریافت کلینیک‌ها");
   return (await r.json()).items as MapClinic[];
+}
+
+// ---------------- فاز ۶۹ - پرداخت آنلاین رزرو + امتیازدهی مشاوران ----------------
+
+export interface BookingPayment {
+  redirect_url: string;
+  authority: string;
+  gateway: string;
+  order_number: string;
+  amount: number;
+  currency: string;
+}
+
+export interface PublicService {
+  id: string;
+  title: string;
+  description: string | null;
+  duration_minutes: number;
+  session_type: string;
+  price_amount: number | null;
+  price_currency: string | null;
+}
+
+export interface CounselorReviewItem {
+  id: string;
+  rating: number;
+  comment: string | null;
+  author: string;
+  created_at: string | null;
+}
+
+export interface CounselorReviewsResponse {
+  items: CounselorReviewItem[];
+  summary: {
+    rating_avg: number | null;
+    review_count: number;
+    breakdown: Record<string, number>;
+  };
+}
+
+export async function fetchPublicCounselor(id: string): Promise<PublicCounselor & { degree: string | null }> {
+  const r = await fetch(`/api/v1/public/counselors/${encodeURIComponent(id)}`);
+  if (!r.ok) throw new Error("مشاور یافت نشد یا فعال نیست");
+  return (await r.json()) as PublicCounselor & { degree: string | null };
+}
+
+export async function fetchPublicServices(): Promise<PublicService[]> {
+  const r = await fetch("/api/v1/public/services");
+  if (!r.ok) throw new Error("خطا در دریافت خدمات");
+  return (await r.json()).items as PublicService[];
+}
+
+export async function fetchCounselorReviews(id: string): Promise<CounselorReviewsResponse> {
+  const r = await fetch(`/api/v1/public/counselors/${encodeURIComponent(id)}/reviews`);
+  if (!r.ok) throw new Error("خطا در دریافت نظرات");
+  return (await r.json()) as CounselorReviewsResponse;
+}
+
+export async function postCounselorReview(
+  counselorId: string,
+  payload: { review_token: string; rating: number; comment?: string },
+): Promise<void> {
+  const r = await fetch(`/api/v1/public/counselors/${encodeURIComponent(counselorId)}/reviews`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => null);
+    throw new Error((d && d.detail) || "خطا در ثبت نظر");
+  }
 }

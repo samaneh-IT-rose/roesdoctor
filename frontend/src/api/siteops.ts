@@ -17,7 +17,17 @@ export interface ConsultationRow {
   referral_source: string | null;
   preferred_counselor_id: string | null;
   preferred_start_at: string | null;
+  /** فاز ۶۹: وضعیت پرداخت آنلاین رزرو (زرین‌پال) */
+  payment_status: string;
+  paid_at: string | null;
 }
+
+export const CONSULT_PAYMENT_META: Record<string, { label: string; color: "success" | "warning" | "error" | "default" }> = {
+  not_required: { label: "بدون پرداخت آنلاین", color: "default" },
+  pending: { label: "در انتظار پرداخت", color: "warning" },
+  paid: { label: "پرداخت شده ✓", color: "success" },
+  failed: { label: "پرداخت ناموفق", color: "error" },
+};
 
 export const CONSULT_STATUS_META: Record<string, { label: string; color: "success" | "warning" | "info" | "default" }> = {
   new: { label: "جدید", color: "warning" },

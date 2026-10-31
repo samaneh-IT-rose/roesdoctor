@@ -65,6 +65,7 @@ from app.models.people import Applicant, Counselor, OrganizationUnit, ServiceLoc
 from app.models.recommendation import Recommendation
 from app.models.referral import Referral
 from app.models.refund import Refund, RefundRequest, RefundRequestStatus
+from app.models.reviews import CounselorReview
 from app.models.learning import (
     AttemptStatus,
     Certificate,

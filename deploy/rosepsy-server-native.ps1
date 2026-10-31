@@ -1,9 +1,16 @@
 ﻿#requires -Version 5.1
 # ============================================================================
-#  rosepsy-server-native.ps1  -  نسخهٔ ۱.۰.۲۷ (Plan B)
+#  rosepsy-server-native.ps1  -  نسخهٔ ۱.۰.۲۸ (Plan B)
 #  استقرار «بومی» Rosepsy روی Windows Server بدون Docker و بدون مجازی‌سازی
 #  ---------------------------------------------------------------------------
 #  تغییرات نسخه‌ها:
+#    1.0.28 - فاز ۶۹ (پرداخت آنلاین رزرو): (۱) PUBLIC_BASE_URL از https به
+#             http تغییر کرد — سرور تولید پورت ۴۴۳ بسته دارد و callback زرین‌پال
+#             باید از همان دامنهٔ http برسد؛ (۲) کلیدهای درگاه زرین‌پال در .env
+#             مقداردهی اولیه می‌شوند (PAYMENT_GATEWAY=zarinpal،
+#             ZARINPAL_MERCHANT_ID خالی، ZARINPAL_SANDBOX=true) — فقط بار اول؛
+#             مقدار موجود کاربر بازنویسی نمی‌شود. تا وقتی merchant_id خالی باشد
+#             رزرو آنلاین به‌طور خودکار با درگاه شبیه‌ساز کار می‌کند.
 #    1.0.27 - رفع خطای میدانی ۱.۰.۲۶: seed_rose_data.py با «duplicate key
 #             ix_users_username» می‌خورد (حسابِ از قبل موجود با username=کد ملی
 #             بدون پروندهٔ مشاور) و کل درج رول‌بک می‌شد → نه کلینیک‌ها به‌روز
@@ -1331,7 +1338,20 @@ function Set-EnvFile([string]$superPassNote) {
     # --- کلیدهای اختصاصی استقرار بومی ---
     Set-EnvKey $envPath 'DATABASE_URL' ("postgresql+psycopg://rosepsy:{0}@127.0.0.1:{1}/rosepsy" -f $dbPass, $DbPort)
     Set-EnvKey $envPath 'ENVIRONMENT' 'production'
-    Set-EnvKey $envPath 'PUBLIC_BASE_URL' ("https://{0}" -f $Domain)
+    # فاز ۶۹: سرور تولید پورت ۴۴۳ بسته دارد → دامنه فقط با http سرو می‌شود؛
+    # callback زرین‌پال و ریدایرکت نتیجهٔ رزرو باید از همین دامنهٔ http بیاید.
+    Set-EnvKey $envPath 'PUBLIC_BASE_URL' ("http://{0}" -f $Domain)
+    # فاز ۶۹: درگاه پرداخت آنلاین رزرو - merchant_id را پنل زرین‌پال بدهید؛
+    # تا خالی باشد رزرو آنلاین خودکار با درگاه شبیه‌ساز (توسعه) کار می‌کند.
+    if (-not ($map.ContainsKey('PAYMENT_GATEWAY') -and $map['PAYMENT_GATEWAY'])) {
+        Set-EnvKey $envPath 'PAYMENT_GATEWAY' 'zarinpal'
+    }
+    if (-not ($map.ContainsKey('ZARINPAL_MERCHANT_ID') -and $map['ZARINPAL_MERCHANT_ID'])) {
+        Set-EnvKey $envPath 'ZARINPAL_MERCHANT_ID' ''
+    }
+    if (-not ($map.ContainsKey('ZARINPAL_SANDBOX') -and $map['ZARINPAL_SANDBOX'])) {
+        Set-EnvKey $envPath 'ZARINPAL_SANDBOX' 'true'
+    }
     Set-EnvKey $envPath 'STORAGE_BACKEND' 'local'
     Set-EnvKey $envPath 'UPLOAD_DIR' "$DataDir\uploads"
     Set-EnvKey $envPath 'CLAMAV_ENABLED' 'true'

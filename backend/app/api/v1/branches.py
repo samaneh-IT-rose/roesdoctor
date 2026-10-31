@@ -19,7 +19,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_current_user, get_db, require_roles
@@ -517,13 +517,41 @@ def public_clinics_map(db: Session = Depends(get_db)) -> dict:
 
     items: list[dict] = []
     total_counselors = 0
+    all_counselor_ids: list = []
+    per_branch: list[tuple] = []
     for b in branches:
         counselors = db.scalars(
             select(Counselor)
             .where(Counselor.branch_id == b.id, Counselor.status == "active")
-            .order_by(Counselor.last_name, Counselor.first_name)
         ).all()
         total_counselors += len(counselors)
+        all_counselor_ids.extend(c.id for c in counselors)
+        per_branch.append((b, counselors))
+    # فاز ۶۹: امتیاز هر مشاور برای مرتب‌سازی «بالاترین امتیاز اول»
+    from app.models.reviews import CounselorReview
+
+    ratings: dict = {}
+    if all_counselor_ids:
+        for cid, avg, cnt in db.execute(
+            select(
+                CounselorReview.counselor_id,
+                func.avg(CounselorReview.rating),
+                func.count(),
+            )
+            .where(
+                CounselorReview.counselor_id.in_(all_counselor_ids),
+                CounselorReview.is_published.is_(True),
+            )
+            .group_by(CounselorReview.counselor_id)
+        ).all():
+            ratings[cid] = (float(avg), int(cnt))
+
+    for b, counselors in per_branch:
+        def _c_sort(c):
+            avg, cnt = ratings.get(c.id, (0.0, 0))
+            return (-(avg or 0.0), -cnt, c.last_name, c.first_name)
+
+        counselors = sorted(counselors, key=_c_sort)
         items.append({
             "id": str(b.id),
             "name": b.name,
@@ -550,6 +578,13 @@ def public_clinics_map(db: Session = Depends(get_db)) -> dict:
                     "degree": c.degree,
                     "license": c.license_number,
                     "bookable": _bookable(c),
+                    # فاز ۶۹: امتیاز برای نمایش ستاره‌ها در کارت کلینیک
+                    "rating_avg": (
+                        round(ratings[c.id][0], 1)
+                        if c.id in ratings and ratings[c.id][0]
+                        else None
+                    ),
+                    "review_count": ratings.get(c.id, (0.0, 0))[1],
                 }
                 for c in counselors
             ],

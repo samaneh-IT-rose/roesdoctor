@@ -13,7 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.appointment import Appointment, AppointmentStatus
-from app.models.consultation import ConsultationRequest
+from app.models.consultation import ConsultPaymentStatus, ConsultationRequest
+from app.core.config import get_settings
 
 UTC = timezone.utc
 WALL_OFFSET = timedelta(hours=3, minutes=30)  # آفست ثابت ایران (بدون ساعت تابستانی)
@@ -75,6 +76,14 @@ def _busy_intervals(db: Session, counselor_id, from_day: date, to_day: date) -> 
             s = s.replace(tzinfo=UTC)
         out.append((s, s + timedelta(minutes=dur)))
 
+    # فاز ۶۹: رزرو در انتظار پرداخت آنلاین فقط تا سقف TTL اسلات را اشغال
+    # می‌کند؛ پس از آن (پرداخت‌نشده) اسلات آزاد اعلام می‌شود تا رزرو رهاشده
+    # در درگاه، تقویم را برای همیشه ببندد. رزرو پرداخت‌شده یا بدون پرداخت
+    # آنلاین (جریان قدیمی) همیشه اشغال است.
+    # توجه: created_at با server_default=now() ذخیره می‌شود (UTC واقعی)،
+    # پس مقایسه هم با UTC واقعی انجام می‌شود نه قرارداد ساعت محلی.
+    unpaid_ttl = timedelta(minutes=get_settings().booking_unpaid_ttl_minutes)
+    stale_cutoff = datetime.now(UTC) - unpaid_ttl
     pending = db.scalars(
         select(ConsultationRequest).where(
             ConsultationRequest.preferred_counselor_id == counselor_id,
@@ -85,6 +94,15 @@ def _busy_intervals(db: Session, counselor_id, from_day: date, to_day: date) -> 
         )
     ).all()
     for r in pending:
+        if r.payment_status == ConsultPaymentStatus.FAILED:
+            continue  # پرداخت در درگاه تأیید نشد → اسلات دوباره آزاد است
+        if r.payment_status == ConsultPaymentStatus.PENDING:
+            created = r.created_at
+            if created is not None:
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=UTC)
+                if created < stale_cutoff:
+                    continue  # منتظر پرداخت منقضی‌شده → اسلات آزاد
         s = r.preferred_start_at
         if s.tzinfo is None:
             s = s.replace(tzinfo=UTC)
@@ -137,3 +155,29 @@ def validate_slot(db: Session, counselor_id, raw: datetime) -> datetime | None:
     if any(s < e and b < s_end for b, e in busy):
         return None
     return s
+
+def release_stale_unpaid_requests(db: Session) -> int:
+    """فاز ۶۹ - آزادسازی رزروهای در انتظار پرداختِ منقضی.
+
+    رزروی که payment_status='pending' و پرداخت آن تا سقف TTL
+    (BOOKING_UNPAID_TTL_MINUTES) تأیید نشد «archived» می‌شود تا:
+    ۱) ایندکس یکتای جزئی اسلات آزاد شود (کاربر دیگری بتواند همان اسلات را رزرو کند)؛
+    ۲) درخواست برای پیگیری پذیرش حفظ شود (پاک نمی‌شود).
+    در create_booking_hold و submit_consultation فراخوانی می‌شود.
+    """
+    cutoff = datetime.now(UTC) - timedelta(
+        minutes=get_settings().booking_unpaid_ttl_minutes
+    )
+    rows = db.scalars(
+        select(ConsultationRequest).where(
+            ConsultationRequest.payment_status == ConsultPaymentStatus.PENDING,
+            ConsultationRequest.status.in_(("new", "in_review")),
+            ConsultationRequest.created_at < cutoff,
+        )
+    ).all()
+    if not rows:
+        return 0
+    for r in rows:
+        r.status = "archived"
+    db.commit()
+    return len(rows)

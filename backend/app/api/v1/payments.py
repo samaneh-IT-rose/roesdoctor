@@ -9,17 +9,23 @@ B11 قواعد سند:
 - پس از پرداخت موفق دقیقاً یک فاکتور با شماره یکتا؛ مبلغ فاکتور با
   snapshot سفارش منطبق است.
 """
+import secrets
 import uuid
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_roles
+from app.core.booking import validate_slot
+from app.core.config import get_settings
 from app.models.appointment import Appointment
 from app.models.case import Case
 from app.models.catalog import Service
+from app.models.consultation import ConsultPaymentStatus, ConsultationRequest
 from app.models.org_contract import Contract, ContractService
 from app.models.people import Applicant
 from app.models.payment import Invoice, InvoiceItem, Order, OrderStatus
@@ -443,13 +449,119 @@ def gateway_callback(
     except pay.GatewayError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     order = db.get(Order, payment.order_id)
-    if result.ok and order is not None:
+    if result.ok and order is not None and not (result.payload or {}).get("idempotent"):
         _notify_payment(db, payment, order)
     return {
         "authority": payment.authority,
         "status": payment.status,
         "order_status": order.status if order else None,
     }
+
+
+# ---------------------------------------------------------------- فاز ۶۹ - بازگشت مرورگر از درگاه + رزرو آنلاین
+
+@router.get("/payments/callback/{gateway}")
+def gateway_callback_redirect(
+    gateway: str,
+    authority: str = Query(max_length=120),
+    status: str | None = Query(default=None, max_length=10),
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    """بازگشت مرورگر کاربر از درگاه (زرین‌پال با GET و پارامتر status=OK/NOK
+    برمی‌گردد). تأیید قطعی همان مسیر verify سمت سرور است؛ سپس رزرو عمومی
+    متصل به سفارش «پرداخت‌شده» می‌شود و توکن ثبت نظر صادر می‌گردد.
+    پاسخ: ریدایرکت ۳۰۳ به صفحهٔ نتیجهٔ سایت (/booking/result)."""
+    approve = (status or "OK").upper() != "NOK"
+    state = "failed"
+    req_id = None
+    token = None
+    try:
+        payment, result = pay.verify_payment(db, authority, approve=approve)
+        order = db.get(Order, payment.order_id)
+        if result.ok and order is not None and not (result.payload or {}).get("idempotent"):
+            _notify_payment(db, payment, order)
+        if result.ok and order is not None:
+            state = "success"
+            if order.consultation_request_id is not None:
+                cr = db.get(ConsultationRequest, order.consultation_request_id)
+                if cr is not None:
+                    req_id = str(cr.id)
+                    if cr.payment_status != ConsultPaymentStatus.PAID:
+                        cr.payment_status = ConsultPaymentStatus.PAID
+                        from datetime import datetime, timezone
+
+                        cr.paid_at = datetime.now(timezone.utc)
+                    # فاز ۶۹: اگر رزرو پیش از پرداخت منقضی و archived شده باشد،
+                    # ابتدا آزاد بودن اسلات کنترل می‌شود؛ آزاد بود → دوباره فعال؛
+                    # اشغال شده → archived می‌ماند (پرداخت ثبت است؛ استرداد دستی).
+                    if cr.status == "archived" and cr.preferred_counselor_id and cr.preferred_start_at:
+                        if validate_slot(db, cr.preferred_counselor_id, cr.preferred_start_at) is not None:
+                            cr.status = "new"
+                        else:
+                            cr.reception_note = ((cr.reception_note or "") +
+                                                 " | پرداخت موفق پس از آزادشدن اسلات رسید - بررسی/استرداد دستی")[:2000]
+                    if not cr.review_token:
+                        cr.review_token = secrets.token_urlsafe(32)
+                    token = cr.review_token
+                    db.commit()
+        elif result.ok is False and order is not None and order.consultation_request_id is not None:
+            cr = db.get(ConsultationRequest, order.consultation_request_id)
+            if cr is not None and cr.payment_status == ConsultPaymentStatus.PENDING:
+                # پرداخت تأیید نشد → رزرو عملاً منتفی است؛ اسلات باید آزاد شود
+                cr.payment_status = ConsultPaymentStatus.FAILED
+                if cr.status in ("new", "in_review"):
+                    cr.status = "archived"
+                db.commit()
+            if cr is not None:
+                req_id = str(cr.id)
+    except pay.GatewayError:
+        state = "failed"
+    params = {"state": state, "gateway": gateway}
+    if req_id:
+        params["req"] = req_id
+    if token:
+        params["token"] = token
+    base = get_settings().public_base_url.rstrip("/")
+    return RedirectResponse(url=f"{base}/booking/result?{urlencode(params)}", status_code=303)
+
+
+_SANDBOX_PAGE = """<!doctype html>
+<html lang="fa" dir="rtl">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>درگاه شبیه‌ساز پرداخت - رزپسی</title>
+<style>
+ body{font-family:Vazirmatn,Tahoma,sans-serif;background:#f6eef1;margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh}
+ .card{background:#fff;border-radius:16px;box-shadow:0 10px 40px rgba(168,58,84,.15);padding:32px;max-width:420px;width:92%;text-align:center}
+ h1{color:#7c2740;font-size:18px;margin:0 0 8px} p{color:#6b5560;font-size:14px;margin:6px 0 20px}
+ .btn{display:inline-block;width:100%;padding:12px;border-radius:99px;margin:6px 0;text-decoration:none;font-size:15px;font-weight:700}
+ .ok{background:linear-gradient(135deg,#a83a54,#c05a72);color:#fff}.nok{background:#fff;color:#a83a54;border:1.5px solid #a83a54}
+ code{background:#f6eef1;padding:2px 6px;border-radius:6px;font-size:12px;direction:ltr;display:inline-block}
+</style></head>
+<body><div class="card">
+ <h1>درگاه شبیه‌ساز پرداخت (توسعه)</h1>
+ <p>این صفحه جایگزین درگاه واقعی زرین‌پال در محیط توسعه/آزمون است.</p>
+ <p>شناسه تراکنش: <code>__AUTH__</code></p>
+ <a class="btn ok" href="__CB_OK__">پرداخت موفق (تأیید)</a>
+ <a class="btn nok" href="__CB_NOK__">لغو پرداخت</a>
+</div></body></html>"""
+
+
+@router.get("/sandbox-gateway", response_class=HTMLResponse)
+def sandbox_gateway_page(authority: str = Query(max_length=120)) -> HTMLResponse:
+    """فاز ۶۹ - صفحهٔ شبیه‌ساز درگاه برای محیط توسعه/آزمون؛ دکمه‌های
+    تأیید/لغو به همان مسیر callback GET وصل می‌شوند (جریان واقعی درگاه)."""
+    import html as _html
+
+    safe = _html.escape(authority, quote=True)
+    cb = f"/api/v1/payments/callback/sandbox?authority={safe}"
+    page = (
+        _SANDBOX_PAGE
+        .replace("__AUTH__", safe)
+        .replace("__CB_OK__", cb + "&status=OK")
+        .replace("__CB_NOK__", cb + "&status=NOK")
+    )
+    return HTMLResponse(page)
 
 
 def _notify_payment(db: Session, payment: pay.Payment, order: Order) -> None:

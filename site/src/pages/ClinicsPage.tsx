@@ -94,7 +94,7 @@ function ClinicCard({ c }: { c: MapClinic }) {
                   <Button
                     size="small"
                     variant="contained"
-                    href={`/booking?counselor=${encodeURIComponent(x.id)}`}
+                    href={`/specialist/${encodeURIComponent(x.id)}`}
                     sx={{ height: 26, minWidth: 0, px: 1.2, fontSize: 12, whiteSpace: "nowrap" }}
                   >
                     رزرو نوبت

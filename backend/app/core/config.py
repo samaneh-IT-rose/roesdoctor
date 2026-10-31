@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "Rosepsy"
-    app_version: str = "0.52.0"
+    app_version: str = "0.53.0"
     api_prefix: str = "/api/v1"
     environment: str = "production"
 
@@ -127,6 +127,8 @@ class Settings(BaseSettings):
     # زرین‌پال REST v4؛ merchant_id خالی = درگاه غیرفعال
     zarinpal_merchant_id: str = ""
     zarinpal_sandbox: bool = True
+    # فاز ۶۹ - رزرو آنلاین: رزرو در انتظار پرداخت، تا این سقف اسلات را اشغال نگه می‌دارد
+    booking_unpaid_ttl_minutes: int = 120
     # فاز ۳۲ - B40 + تصمیم D03: نقشه شعب با سرویس نقشه پلاگین‌پذیر
     # همان الگوی D02: پیش‌فرض OSM/Leaflet بدون کلید؛ نشنال/Map.ir برای تولید
     # map_provider = "osm" | "neshan" | "mapir"

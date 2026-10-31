@@ -9,8 +9,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { errDetail } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import {
-  CONSULT_STATUS_META, createManualConsultationRequest, fetchConsultationRequests,
-  updateConsultationRequest,
+  CONSULT_PAYMENT_META, CONSULT_STATUS_META, createManualConsultationRequest,
+  fetchConsultationRequests, updateConsultationRequest,
 } from "../api/siteops";
 import type { ConsultationRow } from "../api/siteops";
 import { convertConsultationRequest } from "../api/referrals";
@@ -123,6 +123,12 @@ export default function ConsultationRequestsPage() {
                       <Typography variant="caption" color="primary" display="block">
                         🗓 نوبت درخواستی: {new Date(row.preferred_start_at.slice(0, 16)).toLocaleString("fa-IR")}
                       </Typography>
+                    )}
+                    {/* فاز ۶۹: وضعیت پرداخت آنلاین رزرو (زرین‌پال) */}
+                    {row.payment_status && row.payment_status !== "not_required" && (
+                      <Chip size="small" sx={{ mt: 0.5 }}
+                        color={CONSULT_PAYMENT_META[row.payment_status]?.color ?? "default"}
+                        label={CONSULT_PAYMENT_META[row.payment_status]?.label ?? row.payment_status} />
                     )}
                   </TableCell>
                   <TableCell><Chip size="small" color={m.color} label={m.label} /></TableCell>

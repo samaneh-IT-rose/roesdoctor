@@ -101,6 +101,9 @@ def _out(db: Session, r: ConsultationRequest) -> dict:
         "referral_source": r.referral_source,
         "preferred_counselor_id": str(r.preferred_counselor_id) if r.preferred_counselor_id else None,
         "preferred_start_at": r.preferred_start_at.isoformat() if r.preferred_start_at else None,
+        # فاز ۶۹: وضعیت پرداخت آنلاین رزرو (زرین‌پال) برای پذیرش
+        "payment_status": r.payment_status,
+        "paid_at": r.paid_at.isoformat() if r.paid_at else None,
     }
 
 

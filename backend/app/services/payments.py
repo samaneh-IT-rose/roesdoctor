@@ -88,7 +88,8 @@ def sandbox_authority(order: Order, payment_id) -> str:
 
 
 def sandbox_pay_url(authority: str) -> str:
-    return f"/sandbox-gateway?authority={authority}"
+    # فاز ۶۹: صفحهٔ شبیه‌ساز در خود بک‌اند سرو می‌شود (GET /api/v1/sandbox-gateway)
+    return f"/api/v1/sandbox-gateway?authority={authority}"
 
 
 def sandbox_verify(authority: str, amount: int, approve: bool = True) -> VerifyResult:
@@ -137,6 +138,16 @@ def _http_post_json(url: str, body: dict, timeout: float = 15.0) -> dict:
 
 
 # ---------------------------------------------------------------- facade
+def public_default_gateway() -> str:
+    """فاز ۶۹ - انتخاب درگاه برای رزرو آنلاین عمومی: زرین‌پال اگر پیکربندی
+    شده باشد (merchant_id تنظیم شده)، وگرنه شبیه‌ساز — تا رزرو عمومی هرگز
+    به‌خاطر پیکربندی ناقص درگاه شکست نخورد."""
+    s = get_settings()
+    if s.payment_gateway == "zarinpal" and s.zarinpal_merchant_id:
+        return "zarinpal"
+    return "sandbox"
+
+
 def configured_gateways() -> list[dict]:
     """وضعیت پیکربندی درگاه‌ها — شفافیت تصمیم D02 برای مدیریت."""
     s = get_settings()
