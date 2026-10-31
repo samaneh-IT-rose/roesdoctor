@@ -36,6 +36,7 @@ from app.models.case import CASE_STATUSES, Case, CaseAssignment, CaseStatus, Con
 from app.models.clinical import Diagnosis, TreatmentPlan
 from app.models.consent import CONSENT_KINDS, ConsentVersion
 from app.models.consultation import ConsultationRequest
+from app.models.counseling_file import UserCounselingFile
 from app.models.discount import Discount, DiscountKind, DiscountRedemption
 from app.models.email_outbox import EmailOutbox, EmailOutboxStatus
 from app.models.file import FileScan, StoredFile
@@ -153,5 +154,6 @@ __all__ = [
     "Message", "MessageKind", "TEXT_MAX_LEN", "VOICE_MAX_BYTES",
     "AgentSession", "AgentMessage",
     "PublicChatSession", "PublicChatMessage",
+    "UserCounselingFile",
     "FormTemplate", "FormResponse", "CallSession", "FIELD_TYPES", "FORM_KINDS",
 ]

@@ -7,6 +7,7 @@ import {
   ListItemText, Menu, MenuItem, Stack, Toolbar, Tooltip, Typography,
 } from "@mui/material";
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import ChecklistRoundedIcon from "@mui/icons-material/ChecklistRounded";
 import SwapHorizRoundedIcon from "@mui/icons-material/SwapHorizRounded";
 import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
@@ -102,6 +103,9 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "دسته‌بندی موضوعی", code: "B32", path: "/topics", roles: ALL_STAFF, icon: <Badge /> },
       { label: "محتوا و دوره‌ها", code: "B33–B36", path: "/learning", roles: ALL_STAFF, icon: <MenuBook /> },
       { label: "مرکز آزمون روان‌شناسی", code: "B37", path: "/psych-tests", roles: ["SYSTEM_ADMIN", "ORG_MANAGER", "TECHNICAL_SUPERVISOR", "COUNSELOR", "RECEPTION", "APPLICANT"], icon: <Psychology /> },
+      // فاز ۷۰: آزمون‌های برگزارشده + پرونده‌های مشاوره کاربران
+      { label: "آزمون‌های برگزارشده", path: "/psych-attempts", roles: ["SYSTEM_ADMIN", "ORG_MANAGER", "TECHNICAL_SUPERVISOR", "COUNSELOR", "RECEPTION"], icon: <ChecklistRoundedIcon /> },
+      { label: "پرونده‌های مشاوره", path: "/counseling-files", roles: ["SYSTEM_ADMIN", "ORG_MANAGER", "TECHNICAL_SUPERVISOR", "COUNSELOR", "RECEPTION"], icon: <FolderSharedRoundedIcon /> },
     ],
   },
   {

@@ -1,9 +1,15 @@
 ﻿#requires -Version 5.1
 # ============================================================================
-#  rosepsy-server-native.ps1  -  نسخهٔ ۱.۰.۲۸ (Plan B)
+#  rosepsy-server-native.ps1  -  نسخهٔ ۱.۰.۲۹ (Plan B)
 #  استقرار «بومی» Rosepsy روی Windows Server بدون Docker و بدون مجازی‌سازی
 #  ---------------------------------------------------------------------------
 #  تغییرات نسخه‌ها:
+#    1.0.29 - فاز ۷۰ (پروندهٔ مشاورهٔ کاربر + چت سالم + عامل اقدام‌محور):
+#             کلیدهای هوش مصنوعی در .env مقداردهی اولیه می‌شوند
+#             (AI_PROVIDER=rule، AI_API_KEY خالی، AI_API_BASE_URL خالی،
+#             AI_MODEL=deepseek-chat) — فقط بار اول؛ مقدار موجود کاربر
+#             بازنویسی نمی‌شود. با خالی ماندن AI_API_KEY دستیار پنل در حالت
+#             «اقدام‌محور» (قاعده‌محور + ابزارهای واقعی) کار می‌کند.
 #    1.0.28 - فاز ۶۹ (پرداخت آنلاین رزرو): (۱) PUBLIC_BASE_URL از https به
 #             http تغییر کرد — سرور تولید پورت ۴۴۳ بسته دارد و callback زرین‌پال
 #             باید از همان دامنهٔ http برسد؛ (۲) کلیدهای درگاه زرین‌پال در .env
@@ -1351,6 +1357,21 @@ function Set-EnvFile([string]$superPassNote) {
     }
     if (-not ($map.ContainsKey('ZARINPAL_SANDBOX') -and $map['ZARINPAL_SANDBOX'])) {
         Set-EnvKey $envPath 'ZARINPAL_SANDBOX' 'true'
+    }
+    # فاز ۷۰: دستیار هوشمند پنل - تا وقتی AI_API_KEY خالی باشد حالت «اقدام‌محور»
+    # (قاعده‌محور + ابزارهای واقعی: رزرو/نتایج آزمون/پرونده/سفارش/کیف پول) فعال است؛
+    # با واردکردن کلید، حلقهٔ عامل LLM (سازگار با DeepSeek/GLM/OpenAI/vLLM) روشن می‌شود.
+    if (-not ($map.ContainsKey('AI_PROVIDER') -and $map['AI_PROVIDER'])) {
+        Set-EnvKey $envPath 'AI_PROVIDER' 'rule'
+    }
+    if (-not ($map.ContainsKey('AI_API_KEY') -and $map['AI_API_KEY'])) {
+        Set-EnvKey $envPath 'AI_API_KEY' ''
+    }
+    if (-not ($map.ContainsKey('AI_API_BASE_URL') -and $map['AI_API_BASE_URL'])) {
+        Set-EnvKey $envPath 'AI_API_BASE_URL' ''
+    }
+    if (-not ($map.ContainsKey('AI_MODEL') -and $map['AI_MODEL'])) {
+        Set-EnvKey $envPath 'AI_MODEL' 'deepseek-chat'
     }
     Set-EnvKey $envPath 'STORAGE_BACKEND' 'local'
     Set-EnvKey $envPath 'UPLOAD_DIR' "$DataDir\uploads"

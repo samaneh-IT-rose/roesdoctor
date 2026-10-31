@@ -248,6 +248,118 @@ def tool_upcoming_appointments_staff(db: Session, actor: User, args: dict) -> di
     }
 
 
+# ------------------------------------------------------- فاز ۷۰ - ابزارهای جدید
+def tool_find_counselor(db: Session, actor: User, args: dict) -> dict:
+    """مشاوران قابل رزرو با لینک صفحهٔ اختصاصی (برای هدایت به رزرو آنلاین)."""
+    from app.core.config import get_settings
+    from app.services.qualification import bookable_counselors
+
+    limit = min(int(args.get("limit") or 5), 10)
+    base = (get_settings().public_base_url or "").rstrip("/")
+    counselors = bookable_counselors(db)[:limit]
+    return {
+        "count": len(counselors),
+        "booking_url": f"{base}/booking" if base else "/booking",
+        "counselors": [
+            {
+                "name": f"{c.first_name} {c.last_name}".strip(),
+                "specialty": c.specialty or c.professional_title or "",
+                "profile_url": (f"{base}/specialist/{c.id}" if base else f"/specialist/{c.id}"),
+            }
+            for c in counselors
+        ],
+    }
+
+
+def tool_my_psych_results(db: Session, actor: User, args: dict) -> dict:
+    """نتایج آزمون‌های خودِ کاربر (عنوان، نمره، تفسیر، زمان) — فقط دادهٔ خودش."""
+    from app.models.psych_test import PsychAttempt, PsychTest
+
+    limit = min(int(args.get("limit") or 8), 20)
+    rows = db.execute(
+        select(PsychAttempt, PsychTest)
+        .join(PsychTest, PsychAttempt.test_id == PsychTest.id)
+        .where(PsychAttempt.user_id == actor.id)
+        .order_by(PsychAttempt.created_at.desc())
+        .limit(limit)
+    ).all()
+    return {
+        "count": len(rows),
+        "results": [
+            {
+                "test_title": t.title,
+                "score": int(a.score or 0),
+                "interpretation": a.interpretation_label,
+                "taken_at": a.created_at.strftime("%Y-%m-%d %H:%M") if a.created_at else None,
+            }
+            for a, t in rows
+        ],
+    }
+
+
+def tool_my_file_summary(db: Session, actor: User, args: dict) -> dict:
+    """خلاصهٔ پروندهٔ مشاورهٔ خودِ کاربر (شمار آزمون/مشاوره/نوبت + آخرین فعالیت)."""
+    from app.services import counseling_file as cf
+
+    data = cf.file_out(db, actor, limit=8)
+    last = data["items"][:3]
+    return {
+        "file_code": data["file"]["file_code"],
+        "counts": data["counts"],
+        "last_activities": [
+            {"kind": i["kind"], "title": i["title"], "at": i.get("at")}
+            for i in last
+        ],
+    }
+
+
+def tool_create_booking_request(db: Session, actor: User, args: dict) -> dict:
+    """ثبت درخواست مشاوره از دل گفتگو (ابزار نوشتاری — فقط کارکنان).
+
+    همان جریان «ثبت حضوری/تلفنی» پذیرش: درخواست جدید با ارجاع «دستیار هوشمند»
+    ثبت می‌شود و پذیرش برای نوبت‌دهی تماس می‌گیرد. اسلات اشغال نمی‌شود.
+    """
+    import re
+
+    from app.models.consultation import ConsultationRequest
+    from app.services.audit import record_audit
+
+    full_name = (args.get("full_name") or "").strip()
+    mobile = (args.get("mobile") or "").strip()
+    topic = (args.get("topic") or "").strip() or "مشاوره"
+    message = (args.get("message") or "").strip()
+    if len(full_name) < 3:
+        return {"error": "نام و نام خانوادگی مراجع را کامل بدهید (حداقل ۳ حرف)"}
+    norm = re.sub(r"[ \-()]", "", mobile)
+    if norm.startswith("+98"):
+        norm = "0" + norm[3:]
+    elif norm.startswith("98") and len(norm) == 12:
+        norm = "0" + norm[2:]
+    if not re.fullmatch(r"09\d{9}", norm):
+        return {"error": "شماره موبایل معتبر نیست (قالب 09xxxxxxxxx)"}
+    r = ConsultationRequest(
+        full_name=full_name[:200],
+        mobile=norm,
+        topic=topic[:100],
+        message=message[:2000] or None,
+        status="new",
+        referral_source="assistant",
+    )
+    db.add(r)
+    db.flush()
+    record_audit(db, action="assistant.booking_request", actor_user_id=actor.id,
+                 entity_type="consultation_request", entity_id=str(r.id),
+                 detail={"mobile": norm})
+    db.commit()
+    return {
+        "created": True,
+        "request_id": str(r.id),
+        "full_name": full_name,
+        "topic": topic,
+        "note": "درخواست ثبت شد؛ پذیرش برای هماهنگی نوبت تماس می‌گیرد. وضعیت در پنل «درخواست‌های مشاوره».",
+    }
+
+
 # ----------------------------------------------------------------- رجیستری
 @dataclass
 class ToolRegistry:
@@ -359,6 +471,53 @@ def build_registry() -> ToolRegistry:
             "required": [],
         },
         func=tool_upcoming_appointments_staff,
+        staff_only=True,
+    ))
+    # --- فاز ۷۰: همهٔ قابلیت‌ها در گفتگو ---
+    reg.register(Tool(
+        name="find_counselor",
+        title="مشاوران قابل رزرو",
+        description="فهرست مشاوران فعال با صلاحیت معتبر + لینک صفحهٔ رزرو هر مشاور",
+        parameters={
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "description": "حداکثر تعداد (پیش‌فرض ۵)"}},
+            "required": [],
+        },
+        func=tool_find_counselor,
+    ))
+    reg.register(Tool(
+        name="my_psych_results",
+        title="نتایج آزمون‌های من",
+        description="نتایج آزمون‌های روان‌شناسی خودِ کاربر (عنوان، نمره، تفسیر، زمان)",
+        parameters={
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "description": "حداکثر تعداد (پیش‌فرض ۸)"}},
+            "required": [],
+        },
+        func=tool_my_psych_results,
+    ))
+    reg.register(Tool(
+        name="my_file_summary",
+        title="پروندهٔ مشاورهٔ من",
+        description="خلاصهٔ پروندهٔ مشاورهٔ کاربر: شمارهٔ پرونده، شمار آزمون‌ها/مشاوره‌ها/نوبت‌ها و آخرین فعالیت‌ها",
+        parameters={"type": "object", "properties": {}, "required": []},
+        func=tool_my_file_summary,
+    ))
+    reg.register(Tool(
+        name="create_booking_request",
+        title="ثبت درخواست مشاوره",
+        description="ثبت درخواست مشاوره برای مراجع (نام + موبایل + موضوع) — پذیرش تماس می‌گیرد (ابزار کارکنان؛ نوشتاری)",
+        parameters={
+            "type": "object",
+            "properties": {
+                "full_name": {"type": "string", "description": "نام و نام خانوادگی مراجع"},
+                "mobile": {"type": "string", "description": "موبایل مراجع (09xxxxxxxxx)"},
+                "topic": {"type": "string", "description": "موضوع مشاوره"},
+                "message": {"type": "string", "description": "توضیح اختیاری"},
+            },
+            "required": ["full_name", "mobile"],
+        },
+        func=tool_create_booking_request,
         staff_only=True,
     ))
     return reg

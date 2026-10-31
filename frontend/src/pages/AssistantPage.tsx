@@ -114,15 +114,18 @@ export default function AssistantPage() {
             label={`سرویس فعال: ${active.active_provider}${active.fallback_applied ? " (fallback)" : ""}`} />
         )}
         {acfg && (
-          <Chip size="small" color={acfg.llm_ready ? "primary" : "default"}
-            label={acfg.llm_ready ? `حلقهٔ عامل فعال — ${acfg.tools.length} ابزار` : "پاسخ قاعده‌محور (کلید LLM تنظیم نشده)"} />
+          <Chip size="small" color={acfg.llm_ready ? "primary" : "secondary"}
+            label={acfg.llm_ready
+              ? `حلقهٔ عامل فعال — ${acfg.tools.length} ابزار`
+              : "حالت اقدام‌محور (قاعده‌محور — بدون کلید LLM)"} />
         )}
       </Box>
       {active && (
         <Alert severity="info">
           D07 — سرویس پلاگین‌پذیر؛ پیکربندی: {active.configured_provider}، فعال: {active.active_provider}؛
           سقف {active.rate_limit_per_minute} پیام در دقیقه. {active.disclaimer}
-          {acfg && !acfg.llm_ready && " برای فعال‌شدن حلقهٔ عامل، AI_API_KEY و AI_API_BASE_URL را در .env تنظیم کنید."}
+          {acfg && !acfg.llm_ready &&
+            " حالت قاعده‌محور هم اقدام‌محور است: رزرو، نتایج آزمون، پرونده، سفارش‌ها و کیف پول را از دل همین گفتگو انجام می‌دهد. برای پاسخ‌های آزادتر می‌توانید AI_API_KEY و AI_API_BASE_URL را در .env تنظیم کنید."}
         </Alert>
       )}
       <Paper sx={{ p: 1.5 }}>
@@ -167,8 +170,11 @@ export default function AssistantPage() {
             <Stack spacing={1} flexGrow={1}>
               {messages.length === 0 && (
                 <Typography variant="body2" color="text.secondary">
-                  بپرسید: «سفارش‌های اخیرم را بگو»، «شعب تهران را لیست کن»، «خدمات آنلاین چه داریم؟»
-                  {acfg?.tools.some((t) => t.staff_only) && "، «خلاصهٔ پرونده‌ها را بده»"} …
+                  بپرسید یا بخواهید: «می‌خواهم نوبت رزرو کنم»، «نتایج آزمون‌هام را بگو»،
+                  «پروندهٔ مشاورهٔ من»، «سفارش‌های اخیرم را بگو»، «شعب تهران را لیست کن»،
+                  «مانده کیف پولم»
+                  {acfg?.tools.some((t) => t.staff_only) &&
+                    "، «خلاصهٔ پرونده‌ها را بده»، «ثبت درخواست مشاوره برای نام مراجع 09xxxxxxxxx»"} …
                 </Typography>
               )}
               {messages.map((m, i) => (

@@ -12,6 +12,7 @@ import { APPOINTMENT_STATUS_META } from "../api/schedule";
 import {
   fetchMyAppointments, fetchMyCases, fetchMyProfile, fetchMyRecommendations,
 } from "../api/me";
+import { CounselingFileItem, fetchMyCounselingFile } from "../api/counseling";
 import { formatJalali, formatJalaliDateTime } from "../utils/jalali";
 
 function isNotFound(e: unknown): boolean {
@@ -24,6 +25,40 @@ function InfoRow({ label, value }: { label: string; value: string | null }) {
     <Stack direction="row" spacing={1}>
       <Typography variant="body2" sx={{ minWidth: 150, color: "text.secondary" }}>{label}:</Typography>
       <Typography variant="body2">{value ?? "—"}</Typography>
+    </Stack>
+  );
+}
+
+// فاز ۷۰ - خط زمانی پروندهٔ مشاورهٔ من (آزمون‌ها + مشاوره‌ها + نوبت‌ها با زمان)
+function FileTimeline({ items }: { items: CounselingFileItem[] }) {
+  const kindMeta: Record<CounselingFileItem["kind"], { label: string; color: "primary" | "secondary" | "info" }> = {
+    psych_test: { label: "آزمون", color: "primary" },
+    consultation: { label: "مشاوره", color: "secondary" },
+    appointment: { label: "نوبت", color: "info" },
+  };
+  return (
+    <Stack spacing={0.5}>
+      {items.map((it) => {
+        const m = kindMeta[it.kind];
+        return (
+          <Box key={`${it.kind}-${it.id}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1.5, p: 1 }}>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Chip size="small" color={m.color} variant="outlined" label={m.label} />
+              <Typography variant="body2" fontWeight={700} flexGrow={1}>{it.title}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {formatJalaliDateTime(it.at)}
+              </Typography>
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+              {it.kind === "psych_test" &&
+                `نمره ${(it.score ?? 0).toLocaleString("fa-IR")} — ${it.interpretation_label ?? ""}${it.viewed ? " — دیده‌شده" : ""}`}
+              {it.kind === "consultation" &&
+                `وضعیت: ${it.status ?? "—"}${it.payment_status === "paid" ? " — پرداخت آنلاین انجام شد" : ""}`}
+              {it.kind === "appointment" && `${it.case_number ? `پروندهٔ ${it.case_number}` : ""}${it.location ? ` — ${it.location}` : ""}`}
+            </Typography>
+          </Box>
+        );
+      })}
     </Stack>
   );
 }
@@ -54,6 +89,12 @@ export default function MyPanelPage() {
     queryKey: ["me-recommendations"],
     queryFn: fetchMyRecommendations,
     enabled: Boolean(profile),
+  });
+
+  // فاز ۷۰ - پروندهٔ مشاورهٔ من (برای هر کاربر — مستقل از اتصال متقاضی)
+  const { data: myFile } = useQuery({
+    queryKey: ["me-counseling-file"],
+    queryFn: fetchMyCounselingFile,
   });
 
   if (isLoading) return <CircularProgress />;
@@ -87,6 +128,28 @@ export default function MyPanelPage() {
         </Box>
         <Button variant="contained">شروع آزمون‌ها</Button>
       </Paper>
+
+      {/* فاز ۷۰ - پروندهٔ مشاورهٔ من: تاریخچهٔ آزمون‌ها و مشاوره‌ها به همراه زمان */}
+      {myFile && (
+        <Paper sx={{ p: 2 }}>
+          <Stack direction="row" alignItems="center" spacing={1} mb={1} flexWrap="wrap" useFlexGap>
+            <Typography variant="subtitle1" fontWeight={700} flexGrow={1}>پروندهٔ مشاوره من</Typography>
+            <Chip size="small" variant="outlined" dir="ltr" label={myFile.file.file_code} />
+            <Typography variant="caption" color="text.secondary">
+              {myFile.counts.psych_tests.toLocaleString("fa-IR")} آزمون —{" "}
+              {myFile.counts.consultations.toLocaleString("fa-IR")} مشاوره —{" "}
+              {myFile.counts.appointments.toLocaleString("fa-IR")} نوبت
+            </Typography>
+          </Stack>
+          {myFile.items.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              هنوز رخدادی ثبت نشده؛ با اولین آزمون یا رزرو مشاوره، تاریخچه اینجا نگهداری می‌شود.
+            </Typography>
+          ) : (
+            <FileTimeline items={myFile.items} />
+          )}
+        </Paper>
+      )}
 
       <Paper sx={{ p: 2 }}>
         <Typography variant="subtitle1" fontWeight={700} mb={1}>اطلاعات پایه من</Typography>

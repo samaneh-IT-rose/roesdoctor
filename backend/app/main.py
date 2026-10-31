@@ -46,6 +46,7 @@ from app.api.v1.public import router as public_router
 from app.api.v1.public_chat import router as public_chat_router
 from app.api.v1.public_chat_admin import router as public_chat_admin_router
 from app.api.v1.psych_tests import router as psych_tests_router
+from app.api.v1.counseling import router as counseling_router
 from app.api.v1.recommendations import router as recommendations_router
 from app.api.v1.referrals import router as referrals_router
 from app.api.v1.refunds import router as refunds_router
@@ -121,6 +122,8 @@ _ROUTERS: list[tuple[object, list[str] | None]] = [
     (support_router, None),
     (provinces_router, None),
     (psych_tests_router, None),
+    # فاز ۷۰: پروندهٔ مشاورهٔ کاربر + تاریخچهٔ آزمون‌ها و مشاوره‌ها
+    (counseling_router, None),
     (ai_router, None),
     (integrations_router, None),
     (processes_router, None),

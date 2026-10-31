@@ -21,6 +21,7 @@ import CaseAppointments from "../components/CaseAppointments";
 import CaseSessions from "../components/CaseSessions";
 import CaseRecommendations from "../components/CaseRecommendations";
 import CaseFiles from "../components/CaseFiles";
+import CasePsychAttempts from "../components/CasePsychAttempts";
 import { formatJalali, formatJalaliDateTime } from "../utils/jalali";
 
 export default function CaseDetailPage() {
@@ -184,6 +185,8 @@ export default function CaseDetailPage() {
       </Paper>
 
       <CaseAssessments caseId={c.id} />
+      {/* فاز ۷۰ - نتایج آزمون‌های روان‌شناسی متصل به پرونده */}
+      <CasePsychAttempts caseId={c.id} />
       <CaseFiles caseId={c.id} />
       <CaseClinical caseId={c.id} />
       <CaseReferrals caseId={c.id} />

@@ -205,7 +205,7 @@ export default function PublicChatWidget() {
       });
       if (!r.ok) {
         const d = await r.json().catch(() => null);
-        throw new Error(d?.detail || "خطا در ارسال پیام");
+        throw new Error(d?.detail || "ارسال پیام ممکن نشد؛ لطفاً چند لحظه بعد دوباره تلاش کنید.");
       }
       const d = await r.json();
       // فاز ۵۶: وقتی اپراتور پذیرش در گفتگو فعال است، دستیار خودکار پاسخ نمی‌دهد
@@ -213,7 +213,14 @@ export default function PublicChatWidget() {
       setMessages((m) => [...m.filter((x) => x.id !== optimistic.id), optimistic, ...(d.message ? [d.message] : [])]);
       if (d.session) setSession(d.session);
     } catch (err) {
-      setError((err as Error).message);
+      // فاز ۷۰: متن پیام گم نشود — به کادر بازگردانده می‌شود تا کاربر فقط «ارسال» بزند
+      setInput(content);
+      const msg = (err as Error).message;
+      setError(
+        msg === "Failed to fetch"
+          ? "ارتباط با سرور برقرار نشد؛ اتصال اینترنت را بررسی کنید و دوباره تلاش کنید."
+          : msg,
+      );
     } finally {
       busyRef.current = false;
       setBusy(false);

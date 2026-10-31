@@ -7,13 +7,15 @@
           ← tool_calls؟ → اجرای امن ابزار → append پیام tool → دوباره مدل
           ← پیام نهایی → ثبت در نشست → پاسخ به UI
 - سقف گام (AI_AGENT_MAX_STEPS، پیش‌فرض ۴) مثل dsh جلوی حلقهٔ بی‌پایان را می‌گیرد؛
-- fail-soft: نبود کلید/خطای مدل/هر استثنا → همان پاسخ‌دهندهٔ قاعده‌محور فاز ۳۵؛
+- fail-soft: نبود کلید/خطای مدل/هر استثنا → پاسخ‌دهندهٔ قاعده‌محور — از فاز ۷۰
+  «اقدام‌محور»: نیت کاربر → اجرای واقعی ابزارها → پاسخ با دادهٔ واقعی DB؛
 - مرز داده: ابزارها فقط خودِ کاربر یا دادهٔ عمومی؛ ابزار کارکنان فقط با نقش؛
 - دیسکلیمر ثابت فاز ۳۵ روی پاسخ نهایی می‌ماند.
 """
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -123,6 +125,168 @@ def _tool_result_text(result: dict) -> str:
         return "{}"
 
 
+# ---------------------------------------------------------------------------
+# فاز ۷۰ - پاسخ‌دهندهٔ «اقدام‌محور» بدون LLM: نیت → اجرای ابزار واقعی → متن
+# (پیش از این بدون کلید LLM فقط متن ثابت برمی‌گشت و کاربر هیچ قابلیتی در
+# گفتگو نداشت؛ حالا همان ابزارهای عامل در حالت قاعده‌محور هم اجرا می‌شوند.)
+_BOOKING_WORDS = ("نوبت", "رزرو", "appointment", "booking")
+_BOOKING_MINE = ("نوبت‌های من", "نوبت های من", "نوبتام", "وقت‌های من")
+_RESULT_WORDS = ("نتیجه", "نتایج", "آزمون", "ازمون", "نمره", "امتیاز آزمون", "test")
+_FILE_WORDS = ("پروندهٔ مشاوره", "پرونده مشاوره", "تاریخچه", "سوابق", "پرونده‌ام")
+_ORDER_WORDS = ("سفارش", "پرداخت", "فاکتور", "خرید")
+_WALLET_WORDS = ("کیف پول", "کیف‌پول", "مانده", "اعتبار")
+_BRANCH_WORDS = ("شعبه", "آدرس", "مرکز", "کجا")
+_SERVICE_WORDS = ("خدمت", "خدمات", "درمان", "کارگاه", "دوره")
+_CASES_WORDS = ("پرونده‌ها", "آمار پرونده", "خلاصهٔ پرونده")
+_GREETING_WORDS = ("سلام", "درود", "خسته نباشید", "وقت بخیر")
+_THANKS_WORDS = ("ممنون", "مرسی", "سپاس", "متشکر")
+
+
+def _fmt_results(result: dict) -> str:
+    rows = result.get("results") or []
+    if not rows:
+        return "هنوز آزمونی انجام نداده‌اید؛ از «مرکز آزمون روان‌شناسی» می‌توانید شروع کنید."
+    lines = [f"{len(rows)} نتیجهٔ اخیر شما:"]
+    for r in rows:
+        lines.append(
+            f"• {r['test_title']} — نمره {r['score']} ({r['interpretation']}) — {r['taken_at'] or ''}".rstrip(" —")
+        )
+    lines.append("گزارش کامل هر آزمون در «مرکز آزمون روان‌شناسی → نتایج من» است.")
+    return "\n".join(lines)
+
+
+def _fmt_counselors(result: dict) -> str:
+    rows = result.get("counselors") or []
+    url = result.get("booking_url") or "/booking"
+    if not rows:
+        return (
+            "در حال حاضر مشاوری برای رزرو فعال نیست. "
+            "می‌توانید درخواست مشاوره ثبت کنید تا پذیرش با شما تماس بگیرد."
+        )
+    lines = ["مشاوران قابل رزرو (به‌ترتیب امتیاز):"]
+    for c in rows:
+        spec = f" ({c['specialty']})" if c.get("specialty") else ""
+        lines.append(f"• {c['name']}{spec} — رزرو: {c['profile_url']}")
+    lines.append(f"صفحهٔ رزرو نوبت: {url} — انتخاب زمان، پرداخت آنلاین و ثبت نهایی همه آنلاین است.")
+    return "\n".join(lines)
+
+
+def _fmt_file(result: dict) -> str:
+    counts = result.get("counts") or {}
+    kind_fa = {"psych_test": "آزمون", "consultation": "مشاوره", "appointment": "نوبت"}
+    lines = [
+        f"پروندهٔ مشاورهٔ شما ({result.get('file_code', '')}): "
+        f"{counts.get('psych_tests', 0)} آزمون، {counts.get('consultations', 0)} درخواست/رزرو مشاوره، "
+        f"{counts.get('appointments', 0)} نوبت."
+    ]
+    for i in result.get("last_activities") or []:
+        at = (i.get("at") or "")[:16].replace("T", " ")
+        lines.append(f"• {kind_fa.get(i.get('kind'), i.get('kind'))}: {i.get('title')} — {at}")
+    lines.append("شرح کامل تاریخچه در «پنل شخصی → پروندهٔ مشاوره من» است.")
+    return "\n".join(lines)
+
+
+def _rule_action_answer(
+    db: Session, actor: User, message: str, reg: ToolRegistry
+) -> tuple[str, list[StepTrace]]:
+    """نیت‌یابی قاعده‌محور → اجرای ابزار واقعی → پاسخ فارسی با دادهٔ واقعی."""
+    text = (message or "").strip().lower()
+    steps: list[StepTrace] = []
+
+    def run(name: str, args: dict | None = None) -> dict:
+        result, trace = _run_tool(db, actor, reg, name, json.dumps(args or {}, ensure_ascii=False))
+        if trace is not None:
+            steps.append(trace)
+        return result
+
+    def can(name: str) -> bool:
+        tool = reg.get(name)
+        return tool is not None and staff_allowed(actor, tool)
+
+    # «ثبت درخواست مشاوره برای نام ۰۹…» — الگوی صریح ثبت از پذیرش/کارکنان
+    m = re.search(r"09\d{9}", text.replace("۰", "0").replace("۹", "9"))
+    if m and ("ثبت" in text or "درخواست" in text) and can("create_booking_request"):
+        name_part = re.sub(r"09\d{9}", "", text)
+        name_part = re.sub(r"(ثبت|درخواست|مشاوره|برای|لطفا|کنید|کن)", " ", name_part).strip()
+        result = run("create_booking_request", {
+            "full_name": name_part or message[:60], "mobile": m.group(0),
+            "topic": "مشاوره (ثبت از گفتگو)",
+        })
+        if "error" not in result:
+            return f"✅ {result.get('note', 'درخواست ثبت شد.')}", steps
+        return f"{result.get('error')} — مثال: «ثبت درخواست مشاوره برای علی احمدی 09121234567».", steps
+
+    if any(w in text for w in _BOOKING_MINE):
+        result = run("my_appointments")
+        rows = result.get("appointments") or []
+        if not rows:
+            return "نوبت آینده‌ای ندارید. برای رزرو نوبت جدید بگویید «می‌خواهم نوبت رزرو کنم».", steps
+        lines = [f"{len(rows)} نوبت آیندهٔ شما:"]
+        lines += [f"• {r.get('scheduled_at','')} — {r.get('service_title') or r.get('status','')}" for r in rows]
+        return "\n".join(lines), steps
+
+    if any(w in text for w in _BOOKING_WORDS):
+        result = run("find_counselor")
+        body = _fmt_counselors(result)
+        if can("create_booking_request"):
+            body += ("\nبرای ثبت درخواست مراجع از همین‌جا، بنویسید: "
+                     "«ثبت درخواست مشاوره برای نام مراجع 09xxxxxxxxx».")
+        return body, steps
+
+    if any(w in text for w in _RESULT_WORDS):
+        return _fmt_results(run("my_psych_results")), steps
+
+    if any(w in text for w in _FILE_WORDS):
+        return _fmt_file(run("my_file_summary")), steps
+
+    if any(w in text for w in _ORDER_WORDS):
+        result = run("my_orders")
+        rows = result.get("orders") or []
+        if not rows:
+            return "سفارشی برای شما ثبت نشده است.", steps
+        lines = [f"{len(rows)} سفارش اخیر شما:"]
+        lines += [f"• {r.get('order_number','')} — {r.get('status','')} — {r.get('amount','')}" for r in rows]
+        return "\n".join(lines), steps
+
+    if any(w in text for w in _WALLET_WORDS):
+        result = run("wallet_balance")
+        return f"مانده کیف پول شما: {result.get('balance', result)}", steps
+
+    if any(w in text for w in _BRANCH_WORDS):
+        result = run("list_branches")
+        rows = result.get("branches") or []
+        if not rows:
+            return "شعبه‌ای یافت نشد.", steps
+        lines = [f"{len(rows)} شعبه:"]
+        lines += [f"• {r.get('name','')} ({r.get('city','')}) — {r.get('address','')}" for r in rows]
+        return "\n".join(lines), steps
+
+    if any(w in text for w in _SERVICE_WORDS):
+        result = run("search_services")
+        rows = result.get("services") or []
+        if not rows:
+            return "خدمت فعالی یافت نشد.", steps
+        lines = [f"{len(rows)} خدمت فعال:"]
+        lines += [f"• {r.get('title','')}" for r in rows]
+        return "\n".join(lines), steps
+
+    if any(w in text for w in _CASES_WORDS) and can("cases_summary"):
+        result = run("cases_summary")
+        return f"خلاصهٔ پرونده‌ها: {json.dumps(result, ensure_ascii=False)}", steps
+
+    if any(w in text for w in _GREETING_WORDS):
+        return (
+            "سلام! من دستیار هوشمند Rosepsy هستم و بدون نیاز به تنظیم اضافه کار می‌کنم. "
+            "می‌توانید بپرسید: «می‌خواهم نوبت رزرو کنم»، «نتایج آزمون‌هام را بگو»، "
+            "«پروندهٔ مشاورهٔ من»، «سفارش‌های من»، «مانده کیف پول» یا «شعب تهران»."
+        ), steps
+
+    if any(w in text for w in _THANKS_WORDS):
+        return "خواهش می‌کنم! اگر چیز دیگری لازم داشتید در خدمتم.", steps
+
+    return _rule_answer(message), steps
+
+
 def run_turn(
     db: Session,
     actor: User,
@@ -205,7 +369,18 @@ def run_turn(
 
     if final_answer is None:
         provider_name = "rule" if fallback else provider_name
-        final_answer = _rule_answer(message)
+        # فاز ۷۰ - پاسخ اقدام‌محور: نیت → ابزار واقعی → متن با دادهٔ واقعی
+        final_answer, rule_steps = _rule_action_answer(db, actor, message, reg)
+        for trace in rule_steps:
+            steps.append(trace)
+            db.add(AgentMessage(
+                session_id=session.id,
+                role="tool",
+                content=_tool_result_text(trace.result),
+                tool_name=trace.tool_name,
+                tool_args=trace.args,
+                tool_result=trace.result,
+            ))
 
     latency = int((time.monotonic() - started) * 1000)
     db.add(AgentMessage(

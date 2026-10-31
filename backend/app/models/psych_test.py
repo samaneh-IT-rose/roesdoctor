@@ -198,4 +198,10 @@ class PsychAttempt(Base):
     demographics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # فاز ۶۳ - snapshot ساخت‌یافتهٔ گزارش تحلیلی (مقیاس‌ها/سطح‌ها/متن تفسیر)
     result_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # فاز ۷۰ - زمان «دیده‌شدن» نتیجه توسط خود کاربر (لیست نتایج دیده‌شده)
+    viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # فاز ۷۰ - پروندهٔ متصل (ایجاد پرونده از روی آزمون در پنل کارکنان)
+    case_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cases.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

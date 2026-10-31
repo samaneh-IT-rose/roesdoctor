@@ -9,6 +9,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { formatJalaliDateTime } from "../utils/jalali";
 import { errDetail } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { fetchTopics } from "../api/topics";
@@ -16,7 +17,7 @@ import {
   PsychAttempt, PsychInterpretation, PsychQuestion, PsychTest,
   addInterpretation, addPsychQuestion, createPsychTest, fetchInterpretations,
   fetchMyPsychResults, fetchPsychAttempts, fetchPsychQuestions, fetchPsychTests,
-  fetchPublicPsychTests, reviewPsychTest, submitPsychTestForReview,
+  fetchPublicPsychTests, markAttemptViewed, reviewPsychTest, submitPsychTestForReview,
 } from "../api/psych";
 import { EmptyState, FormSection, OptionsEditor, OptionRow } from "../components/FormKit";
 import PsychResultReport from "../components/PsychResultReport";
@@ -240,6 +241,16 @@ function TestCard({ test, color, code, onRun }: {
 
 function MyResultsTable({ results }: { results: PsychAttempt[] }) {
   const [report, setReport] = useState<PsychAttempt | null>(null);
+  const qc = useQueryClient();
+  // فاز ۷۰ - بازکردن «گزارش کامل» = ثبت زمان دیده‌شدن نتیجه
+  const viewedMut = useMutation({
+    mutationFn: markAttemptViewed,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["my-psych-results"] }),
+  });
+  const openReport = (a: PsychAttempt) => {
+    setReport(a);
+    if (!a.viewed_at) viewedMut.mutate(a.id);
+  };
   return (
     <Stack spacing={1.5}>
       {results.length === 0 && (
@@ -255,6 +266,7 @@ function MyResultsTable({ results }: { results: PsychAttempt[] }) {
               <Typography variant="subtitle2" fontWeight={800}>{a.test_title ?? "آزمون"}</Typography>
               <Typography variant="caption" color="text.secondary">
                 {a.interpretation_label}
+                {a.viewed_at ? ` — دیده‌شده: ${formatJalaliDateTime(a.viewed_at)}` : " — دیده‌نشده"}
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
@@ -272,7 +284,7 @@ function MyResultsTable({ results }: { results: PsychAttempt[] }) {
               )}
               <Chip color="primary" label={`نمره: ${a.score.toLocaleString("fa-IR")}`} />
               {a.result_payload && (
-                <Button size="small" variant="contained" onClick={() => setReport(a)}>
+                <Button size="small" variant="contained" onClick={() => openReport(a)}>
                   گزارش کامل
                 </Button>
               )}

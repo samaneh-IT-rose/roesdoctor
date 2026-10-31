@@ -21,7 +21,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_roles
@@ -126,6 +126,9 @@ def _attempt_out(a: PsychAttempt) -> dict:
         "demographics": a.demographics,
         # فاز ۶۳ - گزارش تحلیلی چندلایه (snapshot)
         "result_payload": a.result_payload,
+        # فاز ۷۰ - نتیجهٔ دیده‌شده + پروندهٔ متصل
+        "viewed_at": a.viewed_at.isoformat() if a.viewed_at else None,
+        "case_id": str(a.case_id) if a.case_id else None,
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
 
@@ -605,6 +608,11 @@ def take_test(
         total_label=interp.label, total_guidance=interp.guidance,
     )
     db.add(a)
+    # فاز ۷۰ - پروندهٔ مشاورهٔ کاربر خودکار ساخته/به‌روز می‌شود (تاریخچه با زمان)
+    from app.services import counseling_file as cf
+
+    cf.ensure_file(db, actor)
+    cf.touch_file(db, actor.id)
     db.commit()
     db.refresh(a)
     return {
@@ -631,3 +639,224 @@ def my_results(
         item["test_title"] = t.title if t else None
         out.append(item)
     return {"items": out}
+
+
+# ---------------------------------------------------------------- فاز ۷۰
+# لیست آزمون‌های برگزارشده (پرسنل) + پرونده‌سازی از روی آزمون + نتایج دیده‌شده
+@router.post("/my/psych-results/{attempt_id}/viewed")
+def mark_result_viewed(
+    attempt_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    actor: User = Depends(get_current_user),
+) -> dict:
+    """ثبت «دیده‌شدن» نتیجهٔ آزمون توسط خود کاربر — زمان اولین بازدید ثبت می‌ماند."""
+    a = db.get(PsychAttempt, attempt_id)
+    if a is None or a.user_id != actor.id:
+        raise HTTPException(status_code=404, detail="نتیجهٔ آزمون یافت نشد")
+    if a.viewed_at is None:
+        from datetime import datetime as _dt, timezone as _tz
+
+        a.viewed_at = _dt.now(_tz.utc)
+        from app.services import counseling_file as cf
+
+        cf.touch_file(db, actor.id)
+        db.commit()
+    return {"status": "ok", "viewed_at": a.viewed_at.isoformat()}
+
+
+@router.get("/psych-attempts")
+def list_all_attempts(
+    test_id: uuid.UUID | None = Query(default=None),
+    q: str = Query(default="", max_length=100),
+    limit: int = Query(default=200, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _actor: User = Depends(require_roles(*VIEW_ROLES)),
+) -> dict:
+    """آزمون‌های برگزارشدهٔ کل سامانه — «چه کسی، کدام آزمون، چه زمانی، چه نمره‌ای».
+
+    برای پذیرش/مدیر/مشاور: هویت آزمون‌دهنده (نام/نام کاربری/موبایل)، ابزار،
+    نمره، تفسیر، زمان، وضعیت دیده‌شدن و پروندهٔ متصل.
+    """
+    stmt = (
+        select(PsychAttempt, PsychTest, User)
+        .join(PsychTest, PsychAttempt.test_id == PsychTest.id)
+        .join(User, PsychAttempt.user_id == User.id)
+    )
+    if test_id is not None:
+        stmt = stmt.where(PsychAttempt.test_id == test_id)
+    if (term := (q or "").strip()):
+        like = f"%{term}%"
+        stmt = stmt.where(or_(
+            User.display_name.ilike(like),
+            User.username.ilike(like),
+            User.mobile.ilike(like),
+            PsychTest.title.ilike(like),
+        ))
+    rows = db.execute(
+        stmt.order_by(PsychAttempt.created_at.desc()).limit(limit)
+    ).all()
+    case_ids = [a.case_id for a, _t, _u in rows if a.case_id]
+    case_numbers: dict[uuid.UUID, str] = {}
+    if case_ids:
+        from app.models.case import Case
+
+        case_numbers = {
+            c.id: c.case_number
+            for c in db.scalars(select(Case).where(Case.id.in_(case_ids))).all()
+        }
+    items = []
+    for a, t, u in rows:
+        item = _attempt_out(a)
+        item.update({
+            "test_title": t.title,
+            "test_slug": t.slug,
+            "user_display_name": u.display_name,
+            "user_username": u.username,
+            "user_mobile": u.mobile,
+            "case_number": case_numbers.get(a.case_id) if a.case_id else None,
+        })
+        items.append(item)
+    return {"items": items, "total": len(items)}
+
+
+class CreateCaseFromAttempt(BaseModel):
+    """پارامترهای اختیاری ایجاد پرونده از روی آزمون."""
+    first_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
+    service_location_id: uuid.UUID | None = None
+
+
+@router.post("/psych-attempts/{attempt_id}/create-case", status_code=201)
+def create_case_from_attempt(
+    attempt_id: uuid.UUID,
+    payload: CreateCaseFromAttempt | None = None,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_roles("SYSTEM_ADMIN", "ORG_MANAGER", "RECEPTION")),
+) -> dict:
+    """ایجاد پرونده برای «کسی که آزمون داده» — هویت او مشخص و پرونده‌سازی می‌شود.
+
+    - متقاضی از حساب آزمون‌دهنده پیدا/ساخته می‌شود (اتصال user_id، وگرنه
+      موبایل، وگرنه ساخت از نام نمایشی)؛
+    - اگر همین کاربر قبلاً پرونده‌ای از آزمون داشته باشد، همان پرونده استفاده
+      می‌شود (idempotent) و آزمون‌های بی‌پروندهٔ او هم به آن متصل می‌شوند؛
+    - پروندهٔ جدید با وضعیت awaiting_assignment ثبت می‌شود تا پذیرش مشاور
+      تعیین کند.
+    """
+    from app.models.case import Case, CaseStatus
+    from app.models.people import Applicant
+    from app.api.v1.cases import generate_case_number
+    from app.services.audit import record_audit
+
+    a = db.get(PsychAttempt, attempt_id)
+    if a is None:
+        raise HTTPException(status_code=404, detail="آزمون یافت نشد")
+    owner = db.get(User, a.user_id)
+    if owner is None:
+        raise HTTPException(status_code=422, detail="حساب آزمون‌دهنده یافت نشد")
+    payload = payload or CreateCaseFromAttempt()
+
+    # --- متقاضی: اتصال مستقیم، وگرنه موبایل، وگرنه ساخت جدید
+    applicant = db.scalar(select(Applicant).where(Applicant.user_id == owner.id))
+    applicant_created = False
+    if applicant is None:
+        mobile = (owner.mobile or "").strip()
+        if mobile and mobile != owner.username:
+            applicant = db.scalar(select(Applicant).where(Applicant.mobile == mobile))
+        if applicant is None and mobile:
+            applicant = db.scalar(select(Applicant).where(Applicant.mobile == mobile))
+        if applicant is None:
+            disp = (payload.first_name or "").strip() or owner.display_name.strip()
+            parts = disp.split(" ", 1)
+            first = parts[0] if parts else disp
+            last = (payload.last_name or "").strip() or (parts[1] if len(parts) > 1 else "—")
+            applicant = Applicant(
+                first_name=first[:100], last_name=last[:100],
+                mobile=mobile or None,
+                status="active", record_source="manual",
+                user_id=owner.id,
+            )
+            db.add(applicant)
+            db.flush()
+            applicant_created = True
+
+    # --- پروندهٔ موجود همین کاربر یا ساخت پروندهٔ جدید
+    linked_existing = False
+    case = db.execute(
+        select(Case)
+        .join(PsychAttempt, PsychAttempt.case_id == Case.id)
+        .where(PsychAttempt.user_id == owner.id)
+        .order_by(Case.created_at.desc())
+        .limit(1)
+    ).scalars().first()
+    if case is None:
+        case = Case(
+            case_number=generate_case_number(db),
+            applicant_id=applicant.id,
+            acceptance_date=datetime.now(timezone.utc).date(),
+            service_location_id=payload.service_location_id,
+            service_type="ارزیابی و آزمون‌های روان‌شناسی",
+            status=CaseStatus.AWAITING_ASSIGNMENT,
+            created_by=actor.id,
+        )
+        db.add(case)
+        db.flush()
+    else:
+        linked_existing = True
+
+    # --- اتصال همهٔ آزمون‌های بی‌پروندهٔ همین کاربر
+    unlinked = db.scalars(
+        select(PsychAttempt).where(
+            PsychAttempt.user_id == owner.id, PsychAttempt.case_id.is_(None)
+        )
+    ).all()
+    for ua in unlinked:
+        ua.case_id = case.id
+
+    from app.services import counseling_file as cf
+
+    cf.ensure_file(db, owner)
+    cf.touch_file(db, owner.id)
+    db.commit()
+    record_audit(db, action="psych_attempt.case_created", actor_user_id=actor.id,
+                 entity_type="case", entity_id=str(case.id),
+                 detail={"attempt_id": str(a.id), "user_id": str(owner.id),
+                         "linked_attempts": len(unlinked)})
+    return {
+        "case_id": str(case.id),
+        "case_number": case.case_number,
+        "case_created": not linked_existing,
+        "applicant_id": str(applicant.id),
+        "applicant_created": applicant_created,
+        "linked_attempts": len(unlinked),
+    }
+
+
+@router.get("/cases/{case_id}/psych-attempts")
+def case_psych_attempts(
+    case_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _actor: User = Depends(require_roles(*VIEW_ROLES)),
+) -> dict:
+    """نتایج آزمون‌های متصل به پرونده — تب «نتایج آزمون» صفحهٔ پرونده."""
+    from app.models.case import Case
+
+    if db.get(Case, case_id) is None:
+        raise HTTPException(status_code=404, detail="پرونده یافت نشد")
+    rows = db.execute(
+        select(PsychAttempt, PsychTest, User)
+        .join(PsychTest, PsychAttempt.test_id == PsychTest.id)
+        .join(User, PsychAttempt.user_id == User.id)
+        .where(PsychAttempt.case_id == case_id)
+        .order_by(PsychAttempt.created_at.desc())
+        .limit(200)
+    ).all()
+    items = []
+    for a, t, u in rows:
+        item = _attempt_out(a)
+        item.update({
+            "test_title": t.title,
+            "test_slug": t.slug,
+            "user_display_name": u.display_name,
+        })
+        items.append(item)
+    return {"items": items}

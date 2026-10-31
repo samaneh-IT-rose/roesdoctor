@@ -56,6 +56,15 @@ export interface PsychAttempt {
   // فاز ۶۳ - گزارش تحلیلی چندلایه (snapshot)
   result_payload?: ReportPayload | null;
   test_title?: string | null;
+  // فاز ۷۰ - نتیجهٔ دیده‌شده + پروندهٔ متصل
+  viewed_at?: string | null;
+  case_id?: string | null;
+  // فاز ۷۰ - فهرست سراسری کارکنان (psych-attempts)
+  test_slug?: string | null;
+  user_display_name?: string | null;
+  user_username?: string | null;
+  user_mobile?: string | null;
+  case_number?: string | null;
   created_at: string | null;
 }
 
@@ -202,5 +211,32 @@ export async function fetchPsychAttempts(testId: string): Promise<PsychAttempt[]
 
 export async function fetchMyPsychResults(): Promise<PsychAttempt[]> {
   const r = await apiClient.get<{ items: PsychAttempt[] }>("/my/psych-results");
+  return r.data.items;
+}
+
+// ====================================================== فاز ۷۰
+/** ثبت «دیده‌شدن» نتیجهٔ آزمون توسط خود کاربر (زمان اولین بازدید می‌ماند). */
+export async function markAttemptViewed(attemptId: string): Promise<void> {
+  await apiClient.post(`/my/psych-results/${attemptId}/viewed`, {});
+}
+
+/** فهرست سراسری «آزمون‌های برگزارشده» برای کارکنان (فیلتر اختیاری). */
+export async function fetchPsychAttemptsAll(params?: { test_id?: string; q?: string }): Promise<PsychAttempt[]> {
+  const r = await apiClient.get<{ items: PsychAttempt[] }>("/psych-attempts", { params });
+  return r.data.items;
+}
+
+/** ایجاد پرونده برای آزمون‌دهنده از روی اجرای آزمون. */
+export async function createCaseFromAttempt(attemptId: string): Promise<{
+  case_id: string; case_number: string; case_created: boolean;
+  applicant_id: string; applicant_created: boolean; linked_attempts: number;
+}> {
+  const r = await apiClient.post(`/psych-attempts/${attemptId}/create-case`, {});
+  return r.data;
+}
+
+/** نتایج آزمون‌های متصل به یک پرونده (تب «نتایج آزمون»). */
+export async function fetchCasePsychAttempts(caseId: string): Promise<PsychAttempt[]> {
+  const r = await apiClient.get<{ items: PsychAttempt[] }>(`/cases/${caseId}/psych-attempts`);
   return r.data.items;
 }

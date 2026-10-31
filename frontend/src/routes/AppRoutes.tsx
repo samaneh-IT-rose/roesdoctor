@@ -26,6 +26,8 @@ import NotificationsPage from "../pages/NotificationsPage";
 import LoginPage from "../pages/LoginPage";
 import SupportPage from "../pages/SupportPage";
 import PsychTestCenterPage from "../pages/PsychTestCenterPage";
+import PsychAttemptsPage from "../pages/PsychAttemptsPage";
+import CounselingFilesPage from "../pages/CounselingFilesPage";
 import PsychTestRunPage from "../pages/PsychTestRunPage";
 import AssistantPage from "../pages/AssistantPage";
 import OrganizationsPage from "../pages/OrganizationsPage";
@@ -187,6 +189,17 @@ export default function AppRoutes() {
       <Route path="/psych-tests" element={
         <ProtectedRoute roles={["SYSTEM_ADMIN", "ORG_MANAGER", "TECHNICAL_SUPERVISOR", "COUNSELOR", "RECEPTION", "APPLICANT"]}>
           <Layout><PsychTestCenterPage /></Layout>
+        </ProtectedRoute>
+      } />
+      {/* فاز ۷۰ - آزمون‌های برگزارشده + پرونده‌های مشاوره کاربران */}
+      <Route path="/psych-attempts" element={
+        <ProtectedRoute roles={["SYSTEM_ADMIN", "ORG_MANAGER", "TECHNICAL_SUPERVISOR", "COUNSELOR", "RECEPTION"]}>
+          <Layout><PsychAttemptsPage /></Layout>
+        </ProtectedRoute>
+      } />
+      <Route path="/counseling-files" element={
+        <ProtectedRoute roles={["SYSTEM_ADMIN", "ORG_MANAGER", "TECHNICAL_SUPERVISOR", "COUNSELOR", "RECEPTION"]}>
+          <Layout><CounselingFilesPage /></Layout>
         </ProtectedRoute>
       } />
       <Route path="/psych-tests/:slug/run" element={

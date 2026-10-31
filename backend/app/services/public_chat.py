@@ -22,7 +22,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.catalog import Service, ServiceStatus
-from app.models.public_chat import PublicChatMessage, PublicChatSession
+from app.models.public_chat import (
+    CONTENT_MAX_LEN,
+    OPERATOR_NAME_MAX,
+    OPERATOR_TAKEOVER_MINUTES,
+    PublicChatMessage,
+    PublicChatSession,
+)
 
 RATE_LIMIT_PER_MINUTE = 20
 

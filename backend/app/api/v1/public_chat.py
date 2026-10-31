@@ -135,9 +135,24 @@ def send_message(
 
     # فاز ۵۶: اگر اپراتور پذیرش اخیراً پاسخ داده، دستیار خودکار ساکت می‌ماند
     # (پاسخ انسانی در حال جریان است)؛ در غیر این صورت پاسخ قاعده‌محور برمی‌گردد.
+    # فاز ۷۰: fail-soft — هر خطای موتور پاسخ هرگز کل endpoint را 500 نمی‌کند
+    # (باگ میدانی فاز ۵۶: NameError ثابت‌های مدل → «خطا در ارسال پیام» برای
+    # همهٔ پیام‌ها؛ حالا خطا لاگ می‌شود و پاسخ امن برمی‌گردد).
     assistant_row: PublicChatMessage | None = None
     if not engine.operator_engaged(db, session):
-        reply = engine.build_reply(db, content)
+        try:
+            reply = engine.build_reply(db, content)
+        except Exception:  # noqa: BLE001 — پاسخ امن جای خطای 500
+            import logging
+
+            logging.getLogger("rosepsy.public_chat").exception(
+                "build_reply failed — safe fallback returned")
+            reply = engine.PublicChatReply(
+                "پیام شما ثبت شد؛ اما در تولید پاسخ خودکار خطایی رخ داد. "
+                "لطفاً دوباره تلاش کنید یا از صفحه «رزرو نوبت» استفاده کنید.",
+                actions=[{"label": "صفحهٔ رزرو نوبت", "url": "/booking", "kind": "primary"}],
+                intent="fallback_error",
+            )
         assistant_row = PublicChatMessage(
             session_id=session.id,
             role="assistant",
