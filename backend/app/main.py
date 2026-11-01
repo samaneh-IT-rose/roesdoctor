@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+import logging
 
 from app.core.deprecation import V1DeprecationMiddleware
 from app.core.envelope import API_V2_PREFIX, EnvelopeMiddleware
@@ -161,6 +162,33 @@ app.add_middleware(EnvelopeMiddleware)
 # فاز ۴۱ - ADR-03 گام ۴: انقضای اعلام‌شده v1 (هدرهای Deprecation/Sunset/Warning
 # فقط روی /api/v1؛ readonly = کلید اضطراری چرخه حذف) — بیرونی‌ترین لایه
 app.add_middleware(V1DeprecationMiddleware)
+
+# ---------------------------------------------------------------------------
+# فاز ۷۰ الف — ناهمگامی اسکیمای بانک با کد: پیام روشن فارسی به‌جای 500 بی‌صدا.
+# عارضهٔ میدانی: سرور با کدِ ۰.۵۴.۰ بالا آمده بود ولی مایگریشن ۰۰۴۴ روی بانک
+# اعمال نشده بود → SELECT روی user_counseling_files / psych_attempts.viewed_at
+# ProgrammingError می‌داد → پاسخ 500 متنی ساده → پنل فقط «خطای نامشخص رخ داد»
+# نشان می‌داد. اکنون این کلاس خطا به 503 با راهنمای عملی ترجمه می‌شود
+# (deploy خودش هم با verify_schema_phase70.py ترمیم خودکار دارد).
+from fastapi.responses import JSONResponse  # noqa: E402
+from sqlalchemy.exc import NoSuchColumnError, ProgrammingError  # noqa: E402
+
+_SCHEMA_SYNC_HINT = (
+    "اسکیمای بانک داده با نسخهٔ کد همگام نیست (مایگریشن بانک کامل نشده است). "
+    "لطفاً یک‌بار دیگر اسکریپت deploy را با حالت upgrade اجرا کنید تا مایگریشن "
+    "و وارسی اسکیما (ترمیم خودکار) انجام شود: "
+    "powershell -ExecutionPolicy Bypass -File C:\\rosepsy\\app\\deploy\\"
+    "rosepsy-server-native.ps1 -Mode upgrade"
+)
+
+
+@app.exception_handler(ProgrammingError)
+@app.exception_handler(NoSuchColumnError)
+async def _schema_mismatch_handler(request, exc):  # noqa: ANN001
+    logging.getLogger("rosepsy.schema").error(
+        "schema mismatch on %s %s: %s", request.method, request.url.path, exc
+    )
+    return JSONResponse(status_code=503, content={"detail": _SCHEMA_SYNC_HINT})
 
 
 @app.get("/", include_in_schema=False)
