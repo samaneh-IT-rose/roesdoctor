@@ -1,5 +1,5 @@
 // فاز ۷۰ - پروندهٔ مشاورهٔ کاربر — تاریخچهٔ آزمون‌ها و مشاوره‌ها با زمان
-import { apiClient } from "./client";
+import { apiClient, itemsOf } from "./client";
 
 export interface CounselingFileItem {
   kind: "psych_test" | "consultation" | "appointment";
@@ -56,10 +56,11 @@ export async function fetchMyCounselingFile(): Promise<CounselingFileOut> {
 
 /** فهرست پرونده‌های کاربران (کارکنان). */
 export async function fetchCounselingFiles(q = ""): Promise<CounselingFileRow[]> {
-  const r = await apiClient.get<{ items: CounselingFileRow[] }>("/counseling-files", {
+  // فاز ۷۰ ب: پاکت v2 پاسخ {items,total,page,page_size} را به آرایهٔ برهنه می‌شکند — itemsOf هر دو شکل را می‌خواند
+  const r = await apiClient.get("/counseling-files", {
     params: q ? { q } : {},
   });
-  return r.data.items;
+  return itemsOf<CounselingFileRow>(r);
 }
 
 /** جزئیات پروندهٔ یک کاربر (کارکنان). */

@@ -1,5 +1,5 @@
 // فاز ۳۵ - B37 سند جامع: تست روان‌شناسی و تفسیر (D08: ناظر علمی)
-import { apiClient } from "./client";
+import { apiClient, itemsOf } from "./client";
 
 export interface PsychTest {
   id: string;
@@ -205,13 +205,13 @@ export async function addInterpretation(
 }
 
 export async function fetchPsychAttempts(testId: string): Promise<PsychAttempt[]> {
-  const r = await apiClient.get<{ items: PsychAttempt[] }>(`/psych-tests/${testId}/attempts`);
-  return r.data.items;
+  const r = await apiClient.get(`/psych-tests/${testId}/attempts`);
+  return itemsOf<PsychAttempt>(r);
 }
 
 export async function fetchMyPsychResults(): Promise<PsychAttempt[]> {
-  const r = await apiClient.get<{ items: PsychAttempt[] }>("/my/psych-results");
-  return r.data.items;
+  const r = await apiClient.get("/my/psych-results");
+  return itemsOf<PsychAttempt>(r);
 }
 
 // ====================================================== فاز ۷۰
@@ -222,8 +222,9 @@ export async function markAttemptViewed(attemptId: string): Promise<void> {
 
 /** فهرست سراسری «آزمون‌های برگزارشده» برای کارکنان (فیلتر اختیاری). */
 export async function fetchPsychAttemptsAll(params?: { test_id?: string; q?: string }): Promise<PsychAttempt[]> {
-  const r = await apiClient.get<{ items: PsychAttempt[] }>("/psych-attempts", { params });
-  return r.data.items;
+  // فاز ۷۰ ب: پاکت v2 پاسخ {items,total} را به آرایهٔ برهنه می‌شکند — itemsOf هر دو شکل را می‌خواند
+  const r = await apiClient.get("/psych-attempts", { params });
+  return itemsOf<PsychAttempt>(r);
 }
 
 /** ایجاد پرونده برای آزمون‌دهنده از روی اجرای آزمون. */
@@ -237,6 +238,6 @@ export async function createCaseFromAttempt(attemptId: string): Promise<{
 
 /** نتایج آزمون‌های متصل به یک پرونده (تب «نتایج آزمون»). */
 export async function fetchCasePsychAttempts(caseId: string): Promise<PsychAttempt[]> {
-  const r = await apiClient.get<{ items: PsychAttempt[] }>(`/cases/${caseId}/psych-attempts`);
-  return r.data.items;
+  const r = await apiClient.get(`/cases/${caseId}/psych-attempts`);
+  return itemsOf<PsychAttempt>(r);
 }

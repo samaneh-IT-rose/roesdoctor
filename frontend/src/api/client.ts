@@ -61,6 +61,24 @@ export function paginationOf(res: AxiosResponse): Record<string, unknown> {
   return res.meta?.pagination ?? {};
 }
 
+/** فاز ۷۰ ب — خواندن اقلام فهرست از پاسخ v2 به شکلی همیشه-درست.
+ *
+ * پاکت v2 پاسخ‌های «فهرست صفحه‌بندی‌شده» ({items, total/page/...}) را می‌شکند:
+ * اقلام → آرایهٔ برهنه در `data` و بقیهٔ کلیدها → `meta.pagination`؛ ولی
+ * پاسخ‌های {items:[...]} بدون نشانگر صفحه‌بندی دست‌نخورده می‌مانند.
+ * خواندن کورکورانهٔ `data.items` در حالت اول undefined می‌دهد و react-query
+ * با «Query data cannot be undefined» صفحه را به «خطای نامشخص رخ داد»
+ * می‌برد (عارضهٔ میدانی صفحات فاز ۷۰). این هلپر هر دو شکل را پوشش می‌دهد.
+ */
+export function itemsOf<T>(res: AxiosResponse): T[] {
+  const d = res.data as unknown;
+  if (Array.isArray(d)) return d as T[];
+  if (d && typeof d === "object" && Array.isArray((d as { items?: unknown }).items)) {
+    return (d as { items: T[] }).items;
+  }
+  return [];
+}
+
 function unwrapEnvelope(res: AxiosResponse): AxiosResponse {
   const rt = res.config.responseType;
   if (rt && rt !== "json" && rt !== "text") return res; // blob/arraybuffer — دانلود B39
