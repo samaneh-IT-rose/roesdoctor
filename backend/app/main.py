@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 import logging
 
@@ -64,11 +66,32 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
+_logger = logging.getLogger("rosepsy.schema")
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # فاز ۷۰ ب — ترمیم خودکار اسکیمای فاز ۷۰ در لحظهٔ راه‌اندازی (دفاع نهایی
+    # برابر «کدِ جدید/اسکیمای قدیم»): اگر مایگریشن ۰۰۴۴ به هر دلیل روی بانک
+    # اعمال نشده باشد، همین‌جا idempotent ساخته می‌شود. هیچ‌وقت fatal نیست.
+    try:
+        from app.db.ensure_phase70 import ensure_phase70_schema
+        from app.db.session import engine
+
+        repaired = ensure_phase70_schema(engine)
+        if repaired:
+            _logger.warning("startup self-heal repaired: %s", ", ".join(repaired))
+    except Exception:  # noqa: BLE001
+        _logger.exception("startup phase70 self-heal failed (non-fatal)")
+    yield
+
+
 app = FastAPI(
     title=f"{settings.app_name} API",
     version=settings.app_version,
     docs_url=f"{settings.api_prefix}/docs",
     openapi_url=f"{settings.api_prefix}/openapi.json",
+    lifespan=_lifespan,
 )
 
 # فاز ۳۸ - ADR-03: همین روت‌ها دو بار سوار می‌شوند — v1 (قرارداد فعلی،
@@ -189,6 +212,39 @@ async def _schema_mismatch_handler(request, exc):  # noqa: ANN001
         "schema mismatch on %s %s: %s", request.method, request.url.path, exc
     )
     return JSONResponse(status_code=503, content={"detail": _SCHEMA_SYNC_HINT})
+
+
+# ---------------------------------------------------------------------------
+# فاز ۷۰ ب — هر استثنای مدیریت‌نشده دیگر «۵۰۰ متنیِ بی‌نام» نیست. عارضهٔ
+# میدانی: پنل برای هر ۵۰۰ خام «خطای نامشخص رخ داد» نشان می‌داد و ریشه‌یابی
+# از راه دور غیرممکن بود. اکنون: نام کلاس خطا + کد پیگیری تصادفی در پاسخ
+# می‌آید و traceback کامل با همان کد در لاگ rosepsy-api ثبت می‌شود.
+import traceback as _tb  # noqa: E402
+import uuid as _uuid  # noqa: E402
+
+_errors_log = logging.getLogger("rosepsy.errors")
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request, exc):  # noqa: ANN001
+    track = _uuid.uuid4().hex[:8].upper()
+    _errors_log.error(
+        "unhandled %s on %s %s [track=%s]\n%s",
+        type(exc).__name__,
+        request.method,
+        request.url.path,
+        track,
+        "".join(_tb.format_exception(exc)),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": (
+                f"خطای داخلی سرور ({type(exc).__name__}) — کد پیگیری: {track}. "
+                "این خطا با همین کد در لاگ rosepsy-api ثبت شده است."
+            )
+        },
+    )
 
 
 @app.get("/", include_in_schema=False)

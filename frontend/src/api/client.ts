@@ -186,5 +186,11 @@ export function errDetail(e: unknown): string {
       .filter(Boolean);
     return [obj.message, ...errs].filter(Boolean).join(" — ");
   }
-  return "خطای نامشخص رخ داد";
+  // فاز ۷۰ ب — هیچ detail قابل نمایشی نبود: حداقل کد وضعیت HTTP را نشان بده
+  // تا «خطای نامشخص» قابل تفکیک شود (۵۰۰ سرور، ۵۰۳ اسکیما، قطع شبکه، …).
+  const status = (anyE as { response?: { status?: number } })?.response?.status;
+  if (typeof body === "string" && body.trim()) {
+    return `${body.trim()} (HTTP ${status ?? "?"})`;
+  }
+  return `خطای نامشخص رخ داد${status ? ` (HTTP ${status})` : ""}`;
 }
