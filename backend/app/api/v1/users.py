@@ -9,6 +9,7 @@ from app.api.deps import require_roles
 from app.core.config import get_settings
 from app.core.security import create_access_token, generate_activation_token
 from app.db.session import get_db
+from app.models.org_contract import Organization
 from app.models.user import ROLE_CODES, ActivationToken, AuthSession, Role, User, UserStatus
 from app.schemas.user import ActivationTokenOut, ResetPasswordRequest, RolesUpdate, UserCreate, UserUpdate
 from app.services.audit import record_audit
@@ -17,7 +18,8 @@ router = APIRouter(prefix="/users", tags=["users"])
 settings = get_settings()
 
 
-def _user_out(user: User) -> dict:
+def _user_out(db: Session, user: User) -> dict:
+    org = db.get(Organization, user.organization_id) if user.organization_id else None
     return {
         "id": str(user.id),
         "username": user.username,
@@ -27,9 +29,26 @@ def _user_out(user: User) -> dict:
         "status": user.status,
         "must_change_password": user.must_change_password,
         "roles": sorted(r.code for r in user.roles),
+        # فاز ۷۴: سازمان کاربر (برای ایزولاسیون دادهٔ سازمانی)
+        "organization_id": str(user.organization_id) if user.organization_id else None,
+        "organization_name": org.name if org else None,
         "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
+
+
+def _resolve_organization(db: Session, raw: str | None):
+    """شناسهٔ سازمان را اعتبارسنجی و رکورد آن را برمی‌گرداند (None = بدون سازمان)."""
+    if not raw:
+        return None
+    try:
+        org_uuid = uuid.UUID(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="شناسهٔ سازمان نامعتبر است") from exc
+    org = db.get(Organization, org_uuid)
+    if org is None:
+        raise HTTPException(status_code=404, detail="سازمان یافت نشد")
+    return org
 
 
 def _validate_role_codes(codes: list[str]) -> None:
@@ -63,7 +82,7 @@ def list_users(
     items = db.scalars(
         q.order_by(User.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
     ).all()
-    return {"items": [_user_out(u) for u in items], "total": total, "page": page, "page_size": page_size}
+    return {"items": [_user_out(db, u) for u in items], "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("", status_code=201)
@@ -88,6 +107,8 @@ def create_user(
     if payload.roles:
         roles = db.scalars(select(Role).where(Role.code.in_(payload.roles))).all()
         user.roles = list(roles)
+    org = _resolve_organization(db, payload.organization_id)
+    user.organization_id = org.id if org else None
     db.add(user)
     db.commit()
     record_audit(
@@ -98,7 +119,7 @@ def create_user(
         entity_id=str(user.id),
         detail={"username": username, "roles": payload.roles},
     )
-    return _user_out(user)
+    return _user_out(db, user)
 
 
 @router.patch("/{user_id}")
@@ -122,6 +143,11 @@ def update_user(
     if payload.mobile is not None:
         user.mobile = payload.mobile or None
         changed.append("mobile")
+    # فاز ۷۴: انتساب سازمان (None = بدون تغییر؛ "" = حذف انتساب)
+    if payload.organization_id is not None:
+        org = _resolve_organization(db, payload.organization_id.strip())
+        user.organization_id = org.id if org else None
+        changed.append("organization_id")
     if payload.status is not None:
         if payload.status not in (UserStatus.ACTIVE, UserStatus.DISABLED, UserStatus.PENDING):
             raise HTTPException(status_code=422, detail="وضعیت نامعتبر است")
@@ -136,7 +162,7 @@ def update_user(
         db, action="user.updated", actor_user_id=actor.id,
         entity_type="user", entity_id=str(user.id), detail={"changed": changed},
     )
-    return _user_out(user)
+    return _user_out(db, user)
 
 
 @router.put("/{user_id}/roles")
@@ -160,7 +186,7 @@ def set_roles(
         db, action="user.roles_changed", actor_user_id=actor.id,
         entity_type="user", entity_id=str(user.id), detail={"roles": payload.roles},
     )
-    return _user_out(user)
+    return _user_out(db, user)
 
 
 @router.post("/{user_id}/activation-token", response_model=ActivationTokenOut)
@@ -252,7 +278,7 @@ def impersonate_user(
         "access_token": token,
         "token_type": "bearer",
         "expires_in_minutes": minutes,
-        "user": _user_out(user),
+        "user": _user_out(db, user),
     }
 
 

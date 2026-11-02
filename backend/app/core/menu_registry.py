@@ -144,8 +144,15 @@ MENU_GROUPS: list[dict] = [
                       prefixes=["/organizations", "/contracts", "/statements"]),
             MenuEntry(key="org-programs", title="آزمون‌های سازمانی", path="/org-programs",
                       prefixes=["/org-programs"]),
+            # فاز ۷۴: نتایج آزمون‌های برگزارشدهٔ سازمان‌ها — مدیر سازمان فقط
+            # آزمون‌های سازمان خودش را می‌بیند (اسکوپ users.organization_id)
+            MenuEntry(key="org-exam-results", title="آزمون‌های برگزارشده سازمانی",
+                      path="/org-exam-results", prefixes=["/org-exam-results"]),
             MenuEntry(key="counselors", title="مشاوران", path="/counselors",
-                      prefixes=["/counselors"]),
+                      prefixes=["/counselors"],
+                      # فاز ۷۴: روزها/ساعت‌های مشاورهٔ خود مشاور (کارتابل خودش)
+                      # از دروازهٔ ماتریس مستثنی است — هویت در خود endpoint چک می‌شود
+                      public_prefixes=["/counselors/me/availability"]),
             MenuEntry(key="verification-reviews", title="بازبینی صلاحیت",
                       path="/verification-reviews", prefixes=["/verification-reviews"]),
             MenuEntry(key="branches", title="شعب", path="/branches",
@@ -333,6 +340,8 @@ MENU_SEED: list[tuple[str, str, str]] = [
     *(_seed(r, "organizations", "read") for r in ("RECEPTION", "TECHNICAL_SUPERVISOR")),
     _seed("ORG_MANAGER", "org-programs", "edit"),
     *(_seed(r, "org-programs", "read") for r in ("RECEPTION", "TECHNICAL_SUPERVISOR", "COUNSELOR")),
+    # فاز ۷۴: آزمون‌های برگزارشده سازمانی — مدیر سازمان/پذیرش/مسئول فنی/مشاور
+    *(_seed(r, "org-exam-results", "read") for r in ALL_STAFF),
     _seed("ORG_MANAGER", "counselors", "edit"),
     _seed("TECHNICAL_SUPERVISOR", "counselors", "edit"),
     _seed("ORG_MANAGER", "verification-reviews", "edit"),

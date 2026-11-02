@@ -126,7 +126,9 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "سازمان‌ها", code: "B21", path: "/organizations", roles: ["SYSTEM_ADMIN", "ORG_MANAGER", "RECEPTION", "TECHNICAL_SUPERVISOR"], menuKey: "organizations", icon: <CorporateFareRoundedIcon /> },
       // فاز ۵۸: پنل آزمون‌های سازمانی — برنامهٔ ارزیابی + کارتابل سازمان
-      { label: "آزمون‌های سازمانی", path: "/org-programs", roles: ["SYSTEM_ADMIN", "ORG_MANAGER", "RECEPTION", "TECHNICAL_SUPERVISOR", "COUNSELOR"], menuKey: "org-programs", icon: <AssignmentTurnedInRoundedIcon /> },
+      { label: "آزمون‌های سازمانی", path: "/org-programs", roles: ["SYSTEM_ADMIN", "ORG_MANAGER", "RECEPTION", "TECHNICAL_SUPERVISOR", "COUNSELOR", "APPLICANT"], menuKey: "org-programs", icon: <AssignmentTurnedInRoundedIcon /> },
+      // فاز ۷۴: نتایج آزمون‌های برگزارشدهٔ سازمان‌ها — مدیر سازمان فقط سازمان خودش
+      { label: "آزمون‌های برگزارشده سازمانی", path: "/org-exam-results", roles: ["SYSTEM_ADMIN", "ORG_MANAGER", "RECEPTION", "TECHNICAL_SUPERVISOR", "COUNSELOR"], menuKey: "org-exam-results", icon: <ChecklistRoundedIcon /> },
       { label: "مشاوران", path: "/counselors", roles: ["SYSTEM_ADMIN", "ORG_MANAGER", "TECHNICAL_SUPERVISOR"], menuKey: "counselors", icon: <Diversity3 /> },
       { label: "بازبینی صلاحیت", path: "/verification-reviews", roles: ["SYSTEM_ADMIN", "ORG_MANAGER", "TECHNICAL_SUPERVISOR"], menuKey: "verification-reviews", icon: <VerifiedUserIconSafe /> },
       { label: "شعب", code: "B31", path: "/branches", roles: ["SYSTEM_ADMIN", "ORG_MANAGER", "RECEPTION", "TECHNICAL_SUPERVISOR"], menuKey: "branches", icon: <Map /> },

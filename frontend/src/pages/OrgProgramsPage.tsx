@@ -16,6 +16,8 @@ import GroupRoundedIcon from "@mui/icons-material/GroupRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import { errDetail } from "../api/client";
+import { menuLevel } from "../api/auth";
+import { useAuth } from "../auth/AuthContext";
 import {
   OrgProgramSummary, OrgProgramStatus,
   createOrgProgram, fetchOrgPrograms,
@@ -34,6 +36,9 @@ const statusChip = (s: OrgProgramStatus) =>
 export default function OrgProgramsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { user: me } = useAuth();
+  // فاز ۷۴: دکمهٔ ساخت فقط برای سطح «ویرایش» ماتریس منوها — سطح دیدن/خواندن فقط فهرست می‌بیند
+  const canManage = menuLevel(me, "org-programs") === "edit";
   const [search, setSearch] = useState("");
   const [orgFilter, setOrgFilter] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -50,7 +55,13 @@ export default function OrgProgramsPage() {
     queryKey: ["org-programs"],
     queryFn: () => fetchOrgPrograms(),
   });
-  const orgs = useQuery({ queryKey: ["organizations"], queryFn: fetchOrganizations });
+  // فاز ۷۴: فهرست سازمان‌ها فقط برای سطح ویرایش لود می‌شود — عضو عادی/فقط-دیدن
+  // بدون ۴۰۳ اضافه (اعضا فهرست برنامه‌های خودشان را بدون فیلتر سازمان می‌بینند)
+  const orgs = useQuery({
+    queryKey: ["organizations"],
+    queryFn: fetchOrganizations,
+    enabled: canManage,
+  });
   const catalog = useQuery({ queryKey: ["public-psych-tests"], queryFn: fetchPublicPsychTests });
 
   const filtered = (programs.data ?? []).filter((p) => {
@@ -108,9 +119,11 @@ export default function OrgProgramsPage() {
           </Select>
         </FormControl>
         <Box flex={1} />
-        <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => setCreateOpen(true)}>
-          برنامهٔ آزمون جدید
-        </Button>
+        {canManage && (
+          <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => setCreateOpen(true)}>
+            برنامهٔ آزمون جدید
+          </Button>
+        )}
       </Stack>
 
       {programs.isLoading ? (

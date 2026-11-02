@@ -43,6 +43,7 @@ from app.api.v1.notifications import router as notifications_router
 from app.api.v1.org import router as org_router
 from app.api.v1.organizations import router as organizations_router
 from app.api.v1.org_programs import router as org_programs_router
+from app.api.v1.org_exam_results import router as org_exam_results_router
 from app.api.v1.payments import router as payments_router
 from app.api.v1.provinces import router as provinces_router
 from app.api.v1.public import router as public_router
@@ -93,6 +94,16 @@ async def _lifespan(_app: FastAPI):
             _logger.warning("startup phase71 self-heal repaired: %s", ", ".join(repaired))
     except Exception:  # noqa: BLE001
         _logger.exception("startup phase71 self-heal failed (non-fatal)")
+    # فاز ۷۴ — خودترمیم ایزولاسیون سازمانی + روزهای مشاورهٔ مشاوران
+    try:
+        from app.db.ensure_phase74 import ensure_phase74_schema
+        from app.db.session import engine
+
+        repaired = ensure_phase74_schema(engine)
+        if repaired:
+            _logger.warning("startup phase74 self-heal repaired: %s", ", ".join(repaired))
+    except Exception:  # noqa: BLE001
+        _logger.exception("startup phase74 self-heal failed (non-fatal)")
     yield
 
 
@@ -117,6 +128,8 @@ _ROUTERS: list[tuple[object, list[str] | None]] = [
     (topics_router, None),
     (organizations_router, None),
     (org_programs_router, None),
+    # فاز ۷۴: آزمون‌های برگزارشده سازمانی (اسکوپ مدیر سازمان)
+    (org_exam_results_router, None),
     (counselors_router, None),
     (applicants_router, None),
     (imports_router, None),

@@ -11,7 +11,7 @@ from app.services.case_access import counselor_can_access
 from app.models.appointment import Appointment, AppointmentStatus
 from app.models.catalog import Service, ServiceStatus
 from app.models.case import Case, CaseStatus
-from app.models.people import Applicant, Counselor
+from app.models.people import Applicant, Counselor, CounselorAvailability
 from app.schemas.schedule import AppointmentCreate, AppointmentUpdate
 from app.services.audit import record_audit
 
@@ -23,6 +23,40 @@ STAFF_ROLES = ("ORG_MANAGER", "RECEPTION", "TECHNICAL_SUPERVISOR")
 
 def _roles(actor) -> set[str]:
     return {r.code for r in actor.roles}
+
+
+def availability_conflict(db: Session, counselor_id, scheduled_at) -> str | None:
+    """فاز ۷۴ — بررسی زمان نوبت با روزها/ساعت‌های مشاورهٔ مشاور.
+
+    None = مجاز؛ رشته = پیام خطا. اگر مشاور هیچ بازه‌ای تعریف نکرده باشد
+    رفتار قبلی (بدون محدودیت) برقرار است. قرارداد زمانی سامانه: مقدار
+    ذخیره‌شده نمایندهٔ ساعت محلی ایران است، پس weekday/time خودِ رکورد
+    ملاک است.
+    """
+    windows = db.scalars(
+        select(CounselorAvailability).where(
+            CounselorAvailability.counselor_id == counselor_id,
+            CounselorAvailability.is_active.is_(True),
+        )
+    ).all()
+    if not windows:
+        return None
+    dt = scheduled_at
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)  # زمان دیواری ثبت‌شده (قرارداد سامانه)
+    weekday = dt.weekday()
+    t = dt.time()
+    for w in windows:
+        if w.weekday == weekday and w.start_time <= t < w.end_time:
+            return None
+    from app.api.v1.counselors import PERSIAN_WEEKDAYS
+
+    day_names = "، ".join(sorted({PERSIAN_WEEKDAYS.get(w.weekday, str(w.weekday)) for w in windows}))
+    return (
+        "زمان انتخاب‌شده در روزها و ساعت‌های مشاورهٔ این مشاور نیست. "
+        f"بازه‌های اعلام‌شدهٔ مشاور: {day_names} "
+        "(" + "، ".join(f"{w.start_time.strftime('%H:%M')} تا {w.end_time.strftime('%H:%M')}" for w in windows) + ")"
+    )
 
 
 def _can_access_case(db: Session, actor, case: Case) -> bool:
@@ -108,6 +142,11 @@ def create_appointment(payload: AppointmentCreate, db: Session = Depends(get_db)
     if counselor is None or counselor.status != "active":
         raise HTTPException(status_code=422, detail="مشاور یافت نشد یا فعال نیست")
 
+    # فاز ۷۴: زمان نوبت باید در روزها/ساعت‌های مشاورهٔ تعیین‌شدهٔ مشاور باشد
+    conflict = availability_conflict(db, counselor_id, payload.scheduled_at)
+    if conflict is not None:
+        raise HTTPException(status_code=422, detail=conflict)
+
     # فاز ۲۸ - B06: خدمت انتخابی باید فعال باشد؛ مدت پیش‌فرض از خدمت
     # فاز ۲۸ - B07: snapshot قیمت از تعرفه معتبر در تاریخ نوبت
     service = None
@@ -166,6 +205,10 @@ def update_appointment(
     if payload.scheduled_at is not None:
         if a.status != AppointmentStatus.SCHEDULED:
             raise HTTPException(status_code=409, detail="فقط نوبت برنامه‌ریزی‌شده قابل جابه‌جایی است")
+        # فاز ۷۴: زمان جدید هم باید در بازه‌های مشاور باشد
+        conflict = availability_conflict(db, a.counselor_id, payload.scheduled_at)
+        if conflict is not None:
+            raise HTTPException(status_code=422, detail=conflict)
         a.scheduled_at = payload.scheduled_at
         changed.append("scheduled_at")
     if payload.duration_minutes is not None and a.status == AppointmentStatus.SCHEDULED:

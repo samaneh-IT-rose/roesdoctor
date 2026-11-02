@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  MenuItem,
   Paper,
   Stack,
   Table,
@@ -37,9 +38,11 @@ import {
   resetUserPassword,
   roleTitle,
   setUserRoles,
+  updateUserOrganization,
   updateUserStatus,
 } from "../api/auth";
 import { fetchRoles } from "../api/rbac";
+import { fetchOrganizations } from "../api/organizations";
 import type { UserRow } from "../api/auth";
 import { formatJalaliDateTime } from "../utils/jalali";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -63,6 +66,10 @@ export default function UsersPage() {
   const [rolesTarget, setRolesTarget] = useState<UserRow | null>(null);
   const [pwTarget, setPwTarget] = useState<UserRow | null>(null);
   const [pwResult, setPwResult] = useState<string | null>(null);
+  // فاز ۷۴: فهرست سازمان‌ها برای نمایش/انتساب ستون سازمان
+  const orgsQ = useQuery({ queryKey: ["organizations"], queryFn: fetchOrganizations });
+  const orgName = (id: string | null) =>
+    id ? orgsQ.data?.find((o) => o.id === id)?.name ?? "—" : "—";
 
   const { data, isLoading } = useQuery({
     queryKey: ["users", page, search],
@@ -133,6 +140,7 @@ export default function UsersPage() {
               <TableCell>نام کاربری</TableCell>
               <TableCell>نام نمایشی</TableCell>
               <TableCell>نقش‌ها</TableCell>
+              <TableCell>سازمان</TableCell>
               <TableCell>وضعیت</TableCell>
               <TableCell>آخرین ورود</TableCell>
               <TableCell>عملیات</TableCell>
@@ -141,7 +149,7 @@ export default function UsersPage() {
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={6} align="center">
+                <TableCell colSpan={7} align="center">
                   <CircularProgress size={24} />
                 </TableCell>
               </TableRow>
@@ -159,6 +167,13 @@ export default function UsersPage() {
                         <Chip key={r} label={roleTitle(r)} size="small" variant="outlined" />
                       ))}
                     </Stack>
+                  </TableCell>
+                  <TableCell>
+                    {row.organization_id ? (
+                      <Chip size="small" color="info" variant="outlined" label={orgName(row.organization_id)} />
+                    ) : (
+                      <Typography variant="caption" color="text.disabled">همهٔ داده‌ها</Typography>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Chip label={meta.label} color={meta.color} size="small" />
@@ -202,7 +217,7 @@ export default function UsersPage() {
                         توکن فعال‌سازی
                       </Button>
                       <Button size="small" onClick={() => setRolesTarget(row)}>
-                        نقش‌ها
+                        نقش‌ها/سازمان
                       </Button>
                       <Button size="small" color="warning" onClick={() => setPwTarget(row)}>
                         بازنشانی رمز
@@ -308,11 +323,14 @@ function CreateUserDialog({
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
   const [roles, setRoles] = useState<string[]>([]);
+  const [organizationId, setOrganizationId] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   // فاز ۵۲: نقش‌ها از سرور (سیستمی + سفارشی) — نه لیست ثابت
   const rolesQ = useQuery({ queryKey: ["rbac-roles"], queryFn: fetchRoles });
   const roleItems = (rolesQ.data ?? []).map((r) => ({ code: r.code, title: r.title }));
+  // فاز ۷۴: انتخاب سازمان برای ایزولاسیون دادهٔ سازمانی
+  const orgsQ = useQuery({ queryKey: ["organizations"], queryFn: fetchOrganizations });
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -325,6 +343,7 @@ function CreateUserDialog({
         email: email.trim() || undefined,
         mobile: mobile.trim() || undefined,
         roles,
+        organization_id: organizationId || undefined,
       });
       await queryClient.invalidateQueries({ queryKey: ["users"] });
       setUsername("");
@@ -332,6 +351,7 @@ function CreateUserDialog({
       setEmail("");
       setMobile("");
       setRoles([]);
+      setOrganizationId("");
       onClose();
     } catch (err) {
       setFormError(errDetail(err));
@@ -359,6 +379,19 @@ function CreateUserDialog({
             <TextField label="نام نمایشی" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
             <TextField label="ایمیل (اختیاری)" value={email} onChange={(e) => setEmail(e.target.value)} />
             <TextField label="موبایل (اختیاری)" value={mobile} onChange={(e) => setMobile(e.target.value)} />
+            {/* فاز ۷۴: سازمان کاربر — هر منتسب‌شده فقط داده‌های سازمان خودش را می‌بیند */}
+            <TextField
+              select
+              label="سازمان (اختیاری)"
+              value={organizationId}
+              onChange={(e) => setOrganizationId(e.target.value)}
+              helperText="اگر انتخاب شود، کاربر فقط اطلاعات همین سازمان را می‌بیند"
+            >
+              <MenuItem value="">— بدون سازمان (همهٔ داده‌ها) —</MenuItem>
+              {(orgsQ.data ?? []).map((o) => (
+                <MenuItem key={o.id} value={o.id}>{o.name}</MenuItem>
+              ))}
+            </TextField>
             <Box>
               <Typography variant="body2" sx={{ mb: 1 }}>
                 نقش‌ها:
@@ -408,16 +441,26 @@ function UserRolesDialog({
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string[]>([]);
   const [initialized, setInitialized] = useState<string | null>(null);
+  // فاز ۷۴: انتساب سازمان در همین دیالوگ
+  const [orgId, setOrgId] = useState<string>("");
 
   const rolesQ = useQuery({ queryKey: ["rbac-roles"], queryFn: fetchRoles, enabled: target !== null });
+  const orgsQ = useQuery({ queryKey: ["organizations"], queryFn: fetchOrganizations, enabled: target !== null });
 
   if (target && initialized !== target.id) {
     setInitialized(target.id);
     setSelected(target.roles);
+    setOrgId(target.organization_id ?? "");
   }
 
   const save = useMutation({
-    mutationFn: () => setUserRoles(target!.id, selected),
+    mutationFn: async () => {
+      await setUserRoles(target!.id, selected);
+      // فاز ۷۴: تغییر سازمان فقط وقتی لازم است که مقدار عوض شده باشد
+      if (orgId !== (target!.organization_id ?? "")) {
+        await updateUserOrganization(target!.id, orgId || null);
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       queryClient.invalidateQueries({ queryKey: ["rbac-roles"] });
@@ -431,7 +474,7 @@ function UserRolesDialog({
 
   return (
     <Dialog open={target !== null} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>نقش‌های کاربر — {target?.display_name}</DialogTitle>
+      <DialogTitle>نقش‌ها و سازمان — {target?.display_name}</DialogTitle>
       <DialogContent>
         {roleItems.map((r) => (
           <FormControlLabel
@@ -450,6 +493,23 @@ function UserRolesDialog({
           />
         ))}
         {roleItems.length === 0 && <Typography variant="body2">در حال دریافت نقش‌ها…</Typography>}
+
+        {/* فاز ۷۴: سازمان کاربر — هر منتسب‌شده فقط داده‌های سازمان خودش را می‌بیند */}
+        <TextField
+          select
+          fullWidth
+          size="small"
+          sx={{ mt: 2 }}
+          label="سازمان کاربر"
+          value={orgId}
+          onChange={(e) => setOrgId(e.target.value)}
+          helperText="خالی = همهٔ داده‌ها؛ با انتخاب سازمان، کاربر فقط اطلاعات همان سازمان را می‌بیند"
+        >
+          <MenuItem value="">— بدون سازمان (همهٔ داده‌ها) —</MenuItem>
+          {(orgsQ.data ?? []).map((o) => (
+            <MenuItem key={o.id} value={o.id}>{o.name}</MenuItem>
+          ))}
+        </TextField>
       </DialogContent>
       <DialogActions>
         <Button

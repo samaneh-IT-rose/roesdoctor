@@ -33,6 +33,7 @@ import AssistantPage from "../pages/AssistantPage";
 import OrganizationsPage from "../pages/OrganizationsPage";
 import OrgProgramsPage from "../pages/OrgProgramsPage";
 import OrgProgramWorkdeskPage from "../pages/OrgProgramWorkdeskPage";
+import OrgExamResultsPage from "../pages/OrgExamResultsPage";
 import LearningPage from "../pages/LearningPage";
 import IntegrationsPage from "../pages/IntegrationsPage";
 import MyAssessmentsPage from "../pages/MyAssessmentsPage";
@@ -164,13 +165,19 @@ export default function AppRoutes() {
       } />
       {/* فاز ۵۸ - پنل آزمون‌های سازمانی: فهرست برنامه‌ها + کارتابل */}
       <Route path="/org-programs" element={
-        <ProtectedRoute roles={["SYSTEM_ADMIN", "ORG_MANAGER", "RECEPTION", "TECHNICAL_SUPERVISOR", "COUNSELOR"]}>
+        <ProtectedRoute roles={["SYSTEM_ADMIN", "ORG_MANAGER", "RECEPTION", "TECHNICAL_SUPERVISOR", "COUNSELOR", "APPLICANT"]}>
           <Layout><OrgProgramsPage /></Layout>
         </ProtectedRoute>
       } />
       <Route path="/org-programs/:id" element={
         <ProtectedRoute roles={["SYSTEM_ADMIN", "ORG_MANAGER", "RECEPTION", "TECHNICAL_SUPERVISOR", "COUNSELOR", "APPLICANT"]}>
           <Layout><OrgProgramWorkdeskPage /></Layout>
+        </ProtectedRoute>
+      } />
+      {/* فاز ۷۴ - آزمون‌های برگزارشده سازمانی: مدیر سازمان فقط سازمان خودش */}
+      <Route path="/org-exam-results" element={
+        <ProtectedRoute roles={["SYSTEM_ADMIN", "ORG_MANAGER", "RECEPTION", "TECHNICAL_SUPERVISOR", "COUNSELOR", "APPLICANT"]}>
+          <Layout><OrgExamResultsPage /></Layout>
         </ProtectedRoute>
       } />
       {/* فاز ۳۴ - B33–B36: محتوا/دوره/آزمون/گواهی */}

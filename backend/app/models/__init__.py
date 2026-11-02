@@ -62,7 +62,14 @@ from app.models.payment import (
     Payment,
     PaymentStatus,
 )
-from app.models.people import Applicant, Counselor, OrganizationUnit, ServiceLocation, UserScope
+from app.models.people import (
+    Applicant,
+    Counselor,
+    CounselorAvailability,
+    OrganizationUnit,
+    ServiceLocation,
+    UserScope,
+)
 from app.models.recommendation import Recommendation
 from app.models.referral import Referral
 from app.models.refund import Refund, RefundRequest, RefundRequestStatus
@@ -139,6 +146,7 @@ __all__ = [
     "Branch", "BranchServiceOffering", "BranchStatus",
     "CASE_STATUSES", "Case", "CaseAssignment", "CaseStatus", "Clinic", "Consent",
     "CONSENT_KINDS", "ConsentVersion", "ConsultationRequest", "Counselor",
+    "CounselorAvailability",
     "Discount", "DiscountKind", "DiscountRedemption",
     "CounselorCredential", "CredentialKind", "CredentialVerificationStatus",
     "Diagnosis", "EmailOutbox", "EmailOutboxStatus", "FileScan", "FormVersion",

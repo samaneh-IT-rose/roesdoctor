@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models.appointment import Appointment, AppointmentStatus
 from app.models.consultation import ConsultPaymentStatus, ConsultationRequest
+from app.models.people import CounselorAvailability
 from app.core.config import get_settings
 
 UTC = timezone.utc
@@ -38,17 +39,43 @@ def _now_wall() -> datetime:
     return datetime.now(UTC) + WALL_OFFSET
 
 
-def _slot_starts(day: date) -> list[datetime]:
-    if day.weekday() in CLOSED_WEEKDAYS:
-        return []
-    open_t, close_t = WORK_HOURS[day.weekday()]
-    out: list[datetime] = []
-    cur = datetime.combine(day, open_t, tzinfo=UTC)
-    close = datetime.combine(day, close_t, tzinfo=UTC)
-    while cur + timedelta(minutes=SLOT_MINUTES) <= close:
-        out.append(cur)
-        cur += timedelta(minutes=SLOT_MINUTES)
+def counselor_windows(db: Session, counselor_id) -> dict[int, list[tuple[time, time]]] | None:
+    """فاز ۷۴ — بازه‌های هفتگی مشاور از تعریف خودش در کارتابلش.
+
+    اگر مشاور هیچ بازه‌ای تعریف نکرده باشد None برمی‌گردد و ساعت‌های
+    پیش‌فرض سامانه (WORK_HOURS) ملاک می‌ماند — سازگاری کامل با رفتار قبلی.
+    """
+    rows = db.scalars(
+        select(CounselorAvailability).where(
+            CounselorAvailability.counselor_id == counselor_id,
+            CounselorAvailability.is_active.is_(True),
+        )
+    ).all()
+    if not rows:
+        return None
+    out: dict[int, list[tuple[time, time]]] = {}
+    for r in rows:
+        out.setdefault(r.weekday, []).append((r.start_time, r.end_time))
     return out
+
+
+def _slot_starts(day: date, windows: dict[int, list[tuple[time, time]]] | None = None) -> list[datetime]:
+    """اسلات‌های یک روز — اگر windows داده شود ملاک همان است (فاز ۷۴)."""
+    if windows is not None:
+        day_windows = windows.get(day.weekday()) or []
+    else:
+        if day.weekday() in CLOSED_WEEKDAYS:
+            return []
+        day_windows = [WORK_HOURS[day.weekday()]]
+    out: list[datetime] = []
+    for open_t, close_t in day_windows:
+        cur = datetime.combine(day, open_t, tzinfo=UTC)
+        close = datetime.combine(day, close_t, tzinfo=UTC)
+        while cur + timedelta(minutes=SLOT_MINUTES) <= close:
+            if cur not in out:
+                out.append(cur)
+            cur += timedelta(minutes=SLOT_MINUTES)
+    return sorted(out)
 
 
 def bookable_range() -> tuple[date, date]:
@@ -119,12 +146,13 @@ def free_slots(db: Session, counselor_id, from_day: date, to_day: date) -> list[
     if (to_day - from_day).days > 31:
         to_day = from_day + timedelta(days=31)
     busy = _busy_intervals(db, counselor_id, from_day, to_day)
+    windows = counselor_windows(db, counselor_id)
     now = _now_wall()
     days: list[dict] = []
     day = from_day
     while day <= to_day:
         slots = []
-        for s in _slot_starts(day):
+        for s in _slot_starts(day, windows):
             if s <= now:
                 continue
             s_end = s + timedelta(minutes=SLOT_MINUTES)
@@ -143,9 +171,8 @@ def validate_slot(db: Session, counselor_id, raw: datetime) -> datetime | None:
         raw = raw.replace(tzinfo=UTC)
     s = raw
     day = s.date()
-    if day.weekday() in CLOSED_WEEKDAYS:
-        return None
-    if all(x != s for x in _slot_starts(day)):
+    windows = counselor_windows(db, counselor_id)
+    if all(x != s for x in _slot_starts(day, windows)):
         return None
     f, t = bookable_range()
     if not (f <= day <= t):

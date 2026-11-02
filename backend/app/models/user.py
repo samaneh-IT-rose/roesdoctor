@@ -72,6 +72,15 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
     auth_version: Mapped[int] = mapped_column(Integer, default=1)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # فاز ۷۴ - ایزولاسیون دادهٔ سازمانی: هر کاربر (مدیر سازمان، پذیرش، مشاور،
+    # متقاضی و …) می‌تواند به یک سازمان منتسب شود تا فقط اطلاعات همان سازمان
+    # را ببیند. NULL = بدون محدودیت (رفتار قبلی - مدیران سامانه).
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

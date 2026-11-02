@@ -35,6 +35,28 @@ router = APIRouter(tags=["org-programs"])
 
 MANAGE_ROLES = ("SYSTEM_ADMIN", "ORG_MANAGER")
 VIEW_ROLES = (*MANAGE_ROLES, "TECHNICAL_SUPERVISOR", "RECEPTION", "COUNSELOR")
+# فاز ۷۴: همهٔ نقش‌های ستادی — مبنای تفکیک «ستاد» از «عضو عادی برنامه»
+STAFF_ROLES = (*VIEW_ROLES, "SYSTEM_ADMIN")
+
+
+def _roles(actor) -> set[str]:
+    return {r.code for r in actor.roles}
+
+
+def _is_staff(actor) -> bool:
+    return bool(_roles(actor) & set(STAFF_ROLES))
+
+
+def _actor_org_scope(actor) -> uuid.UUID | None:
+    """فاز ۷۴ — اسکوپ سازمانی کاربر؛ SYSTEM_ADMIN همیشه بدون محدودیت."""
+    if "SYSTEM_ADMIN" in _roles(actor):
+        return None
+    return actor.organization_id
+
+
+def _member_programs_stmt(actor):
+    """برنامه‌هایی که کاربر عضو آن‌هاست (برای اعضای عادی مثل متقاضی)."""
+    return select(OrgProgramMember.program_id).where(OrgProgramMember.user_id == actor.id)
 
 
 # ---------------------------------------------------------------- schemas
@@ -208,9 +230,17 @@ def list_programs(
     status: str = Query(default="", max_length=20),
     q: str = Query(default="", max_length=100),
     db: Session = Depends(get_db),
-    _actor: User = Depends(require_roles(*VIEW_ROLES)),
+    actor: User = Depends(require_roles(*VIEW_ROLES)),
 ) -> dict:
     stmt = select(OrgProgram).order_by(OrgProgram.created_at.desc())
+    # فاز ۷۴ — ایزولاسیون سازمانی + دسترسی عضو:
+    # ۱) کاربر منتسب‌شده به سازمان فقط برنامه‌های همان سازمان را می‌بیند؛
+    # ۲) عضو عادی برنامه (مثلاً متقاضی) فقط برنامه‌های خودش را می‌بیند.
+    org_scope = _actor_org_scope(actor)
+    if org_scope is not None:
+        stmt = stmt.where(OrgProgram.organization_id == org_scope)
+    if not _is_staff(actor):
+        stmt = stmt.where(OrgProgram.id.in_(_member_programs_stmt(actor)))
     if organization_id:
         stmt = stmt.where(OrgProgram.organization_id == _parse_uuid(organization_id, "شناسهٔ سازمان"))
     if status:
@@ -232,6 +262,10 @@ def create_program(
     org_id = _parse_uuid(payload.organization_id, "شناسهٔ سازمان")
     if db.get(Organization, org_id) is None:
         raise HTTPException(status_code=404, detail="سازمان یافت نشد")
+    # فاز ۷۴: مدیر سازمانی که به یک سازمان منتسب است فقط برای همان سازمان برنامه می‌سازد
+    org_scope = _actor_org_scope(actor)
+    if org_scope is not None and org_id != org_scope:
+        raise HTTPException(status_code=403, detail="ثبت برنامه برای سازمان دیگر مجاز نیست")
     if payload.status not in OrgProgramStatus.ALL:
         raise HTTPException(status_code=422, detail="وضعیت نامعتبر است")
     p = OrgProgram(
@@ -256,10 +290,22 @@ def create_program(
 def get_program_workdesk(
     program_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _actor: User = Depends(require_roles(*VIEW_ROLES)),
+    actor: User = Depends(require_roles(*VIEW_ROLES)),
 ) -> dict:
     """کارتابل برنامهٔ سازمانی: برنامه + آزمون‌ها + مشاوران + اعضا + پیشرفت + FAQ."""
     p = _get_program(db, program_id)
+    # فاز ۷۴ — کنترل دسترسی داده:
+    org_scope = _actor_org_scope(actor)
+    if org_scope is not None and p.organization_id != org_scope:
+        raise HTTPException(status_code=403, detail="دسترسی به برنامه‌های این سازمان مجاز نیست")
+    if not _is_staff(actor):
+        member = db.scalars(
+            select(OrgProgramMember).where(
+                OrgProgramMember.program_id == p.id, OrgProgramMember.user_id == actor.id
+            )
+        ).first()
+        if member is None:
+            raise HTTPException(status_code=403, detail="فقط اعضای برنامه به کارتابل آن دسترسی دارند")
     out = _program_summary(db, p)
     org = db.get(Organization, p.organization_id)
     out["guide_text"] = p.guide_text

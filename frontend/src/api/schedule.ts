@@ -101,3 +101,34 @@ export async function finalizeSessionNote(sessionId: string): Promise<SessionRow
 export async function createSessionNoteRevision(sessionId: string): Promise<SessionRow> {
   return (await apiClient.post(`/sessions/${sessionId}/note/revisions`, {})).data;
 }
+
+// ─── فاز ۷۴: روزها و ساعت‌های مشاورهٔ مشاور ───
+export interface AvailabilityWindow {
+  id?: string;
+  weekday: number; // 0=دوشنبه … 4=جمعه 5=شنبه 6=یکشنبه (قرارداد date.weekday())
+  weekday_name?: string;
+  start_time: string; // "HH:MM"
+  end_time: string; // "HH:MM"
+  is_active: boolean;
+}
+
+export interface AvailabilityPayload {
+  items: { weekday: number; start_time: string; end_time: string; is_active: boolean }[];
+  counselor_id?: string | null;
+  configured?: boolean;
+}
+
+export async function fetchMyAvailability(): Promise<AvailabilityPayload> {
+  const r = await apiClient.get<AvailabilityPayload>("/counselors/me/availability");
+  return r.data;
+}
+
+export async function saveMyAvailability(payload: AvailabilityPayload): Promise<AvailabilityPayload> {
+  const r = await apiClient.put<AvailabilityPayload>("/counselors/me/availability", payload);
+  return r.data;
+}
+
+export async function fetchCounselorAvailability(counselorId: string): Promise<AvailabilityPayload> {
+  const r = await apiClient.get<AvailabilityPayload>(`/counselors/${counselorId}/availability`);
+  return r.data;
+}

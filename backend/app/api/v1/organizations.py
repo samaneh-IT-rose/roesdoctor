@@ -36,6 +36,26 @@ router = APIRouter(tags=["organizations"])
 MANAGE_ROLES = ("SYSTEM_ADMIN", "ORG_MANAGER")
 VIEW_ROLES = (*MANAGE_ROLES, "TECHNICAL_SUPERVISOR", "RECEPTION")
 
+
+def _roles(actor) -> set[str]:
+    return {r.code for r in actor.roles}
+
+
+def _ensure_org_scope(actor, org_id) -> None:
+    """فاز ۷۴ — ایزولاسیون سازمانی: کاربر منتسب‌شده به یک سازمان فقط به
+    همان سازمان دسترسی دارد (SYSTEM_ADMIN همیشه بدون محدودیت)."""
+    if "SYSTEM_ADMIN" in _roles(actor):
+        return
+    scope = actor.organization_id
+    if scope is None:
+        return
+    try:
+        target = uuid.UUID(str(org_id))
+    except (TypeError, ValueError):
+        return
+    if target != scope:
+        raise HTTPException(status_code=403, detail="دسترسی به این سازمان مجاز نیست")
+
 _SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,118}[a-z0-9])?$")
 
 
@@ -225,9 +245,12 @@ def _set_contract_tests(db: Session, contract: Contract, test_ids: list[uuid.UUI
 @router.get("/organizations")
 def list_organizations(
     db: Session = Depends(get_db),
-    _actor: User = Depends(require_roles(*VIEW_ROLES)),
+    actor: User = Depends(require_roles(*VIEW_ROLES)),
 ) -> dict:
     orgs = db.scalars(select(Organization).order_by(Organization.name)).all()
+    # فاز ۷۴ — ایزولاسیون: کاربر منتسب‌شده فقط سازمان خودش را می‌بیند
+    if "SYSTEM_ADMIN" not in _roles(actor) and actor.organization_id is not None:
+        orgs = [o for o in orgs if o.id == actor.organization_id]
     return {"items": [_org_out(db, o) for o in orgs]}
 
 
@@ -301,11 +324,12 @@ def update_organization(
 def list_contracts(
     org_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _actor: User = Depends(require_roles(*VIEW_ROLES)),
+    actor: User = Depends(require_roles(*VIEW_ROLES)),
 ) -> dict:
     org = db.get(Organization, org_id)
     if org is None:
         raise HTTPException(status_code=404, detail="سازمان یافت نشد")
+    _ensure_org_scope(actor, org_id)
     contracts = db.scalars(
         select(Contract).where(Contract.organization_id == org_id).order_by(Contract.created_at.desc())
     ).all()
@@ -521,11 +545,12 @@ def create_statement(
 def list_statements(
     org_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _actor: User = Depends(require_roles(*VIEW_ROLES)),
+    actor: User = Depends(require_roles(*VIEW_ROLES)),
 ) -> dict:
     org = db.get(Organization, org_id)
     if org is None:
         raise HTTPException(status_code=404, detail="سازمان یافت نشد")
+    _ensure_org_scope(actor, org_id)
     rows = db.scalars(
         select(OrgStatement)
         .where(OrgStatement.organization_id == org_id)
@@ -539,8 +564,9 @@ def get_statement(
     org_id: uuid.UUID,
     statement_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _actor: User = Depends(require_roles(*VIEW_ROLES)),
+    actor: User = Depends(require_roles(*VIEW_ROLES)),
 ) -> dict:
+    _ensure_org_scope(actor, org_id)
     st = db.get(OrgStatement, statement_id)
     if st is None or st.organization_id != org_id:
         raise HTTPException(status_code=404, detail="صورتحساب یافت نشد")
@@ -589,12 +615,13 @@ def settle_statement(
 def organization_receivables(
     org_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _actor: User = Depends(require_roles(*MANAGE_ROLES, "TECHNICAL_SUPERVISOR")),
+    actor: User = Depends(require_roles(*MANAGE_ROLES, "TECHNICAL_SUPERVISOR")),
 ) -> dict:
     """مطالبه از سازمان: جمع سهم سازمان سفارش‌های پرداخت‌شده (بستانکاری سازمان)."""
     org = db.get(Organization, org_id)
     if org is None:
         raise HTTPException(status_code=404, detail="سازمان یافت نشد")
+    _ensure_org_scope(actor, org_id)
     rows = db.scalars(
         select(Order)
         .where(

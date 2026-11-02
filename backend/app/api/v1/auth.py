@@ -242,7 +242,10 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) ->
     from app.api.deps import user_permissions
     # فاز ۷۱: ماتریس منوها — {menu_key: level} برای فیلتر منوی پنل + دکمه‌ها
     from app.models.rbac import user_menu_levels
+    # فاز ۷۴: سازمان کاربر برای ایزولاسیون دادهٔ سازمانی
+    from app.models.org_contract import Organization
 
+    org = db.get(Organization, user.organization_id) if user.organization_id else None
     return {
         "id": str(user.id),
         "username": user.username,
@@ -254,6 +257,8 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) ->
         "roles": sorted(r.code for r in user.roles),
         "permissions": sorted(user_permissions(db, user)),
         "menu_permissions": user_menu_levels(db, user),
+        "organization_id": str(user.organization_id) if user.organization_id else None,
+        "organization_name": org.name if org else None,
     }
 
 

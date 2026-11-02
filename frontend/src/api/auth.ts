@@ -26,6 +26,9 @@ export interface Me {
   permissions?: string[];
   /** فاز ۷۱: ماتریس منوها — {menu_key: 'view'|'read'|'edit'}؛ کلیدِ غایب یعنی منو پنهان */
   menu_permissions?: Record<string, string>;
+  /** فاز ۷۴: سازمان کاربر (ایزولاسیون دادهٔ سازمانی) — null = بدون محدودیت */
+  organization_id?: string | null;
+  organization_name?: string | null;
 }
 
 /** سطح دسترسی کاربر به یک منو ('view'|'read'|'edit') یا undefined اگر پنهان است */
@@ -72,6 +75,9 @@ export interface UserRow {
   status: string;
   must_change_password: boolean;
   roles: string[];
+  /** فاز ۷۴: سازمان کاربر */
+  organization_id: string | null;
+  organization_name: string | null;
   last_login_at: string | null;
   created_at: string | null;
 }
@@ -148,6 +154,7 @@ export async function createUser(payload: {
   email?: string;
   mobile?: string;
   roles: string[];
+  organization_id?: string | null;
 }): Promise<UserRow> {
   const res = await apiClient.post("/users", payload);
   return res.data;
@@ -155,6 +162,12 @@ export async function createUser(payload: {
 
 export async function updateUserStatus(id: string, status: string): Promise<UserRow> {
   const res = await apiClient.patch(`/users/${id}`, { status });
+  return res.data;
+}
+
+/** فاز ۷۴: انتساب/تغییر سازمان کاربر توسط مدیر سامانه */
+export async function updateUserOrganization(id: string, organizationId: string | null): Promise<UserRow> {
+  const res = await apiClient.patch(`/users/${id}`, { organization_id: organizationId ?? "" });
   return res.data;
 }
 

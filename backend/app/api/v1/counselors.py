@@ -1,12 +1,12 @@
 import uuid
-from datetime import date
+from datetime import date, time as dtime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_roles
+from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
 from app.models.catalog import (
     CounselorCredential,
@@ -15,7 +15,7 @@ from app.models.catalog import (
 )
 from app.models.branch import Branch
 from app.models.location import Province
-from app.models.people import Counselor, ServiceLocation
+from app.models.people import Counselor, CounselorAvailability, ServiceLocation
 from app.models.user import Role, User, UserStatus
 from app.schemas.people import CounselorCreate, CounselorUpdate
 from app.services import counselor_import as ci
@@ -296,3 +296,136 @@ def add_credential(counselor_id: uuid.UUID, payload: CredentialCreate, db: Sessi
                  entity_type="counselor_credential", entity_id=str(cred.id),
                  detail={"counselor_id": str(counselor_id), "kind": cred.kind})
     return _cred_out(cred)
+
+# ---------------------------------------------------------------------------
+# فاز ۷۴ — روزها و ساعت‌های مشاورهٔ هر مشاور
+# مشاور در کارتابل خودش (/worklist) بازه‌های هفتگی‌اش را تعریف می‌کند و
+# نوبت‌دهی/رزرو آنلاین فقط در همین بازه‌ها پذیرفته می‌شود.
+# ---------------------------------------------------------------------------
+PERSIAN_WEEKDAYS: dict[int, str] = {
+    5: "شنبه", 6: "یکشنبه", 0: "دوشنبه", 1: "سه‌شنبه",
+    2: "چهارشنبه", 3: "پنجشنبه", 4: "جمعه",
+}
+
+
+class AvailabilityWindow(BaseModel):
+    weekday: int = Field(ge=0, le=6)
+    start_time: str = Field(min_length=4, max_length=5)  # "HH:MM"
+    end_time: str = Field(min_length=4, max_length=5)  # "HH:MM"
+    is_active: bool = True
+
+
+class AvailabilitySet(BaseModel):
+    items: list[AvailabilityWindow] = Field(default_factory=list)
+
+
+def _parse_hhmm(raw: str, what: str) -> dtime:
+    try:
+        hh, mm = raw.strip().split(":")
+        return dtime(int(hh), int(mm))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=f"ساعت {what} نامعتبر است (قالب HH:MM)") from exc
+
+
+def _availability_out(rows: list[CounselorAvailability]) -> dict:
+    items = [
+        {
+            "id": str(r.id),
+            "weekday": r.weekday,
+            "weekday_name": PERSIAN_WEEKDAYS.get(r.weekday, str(r.weekday)),
+            "start_time": r.start_time.strftime("%H:%M"),
+            "end_time": r.end_time.strftime("%H:%M"),
+            "is_active": bool(r.is_active),
+        }
+        for r in rows
+    ]
+    # ترتیب هفتهٔ ایرانی: شنبه … جمعه
+    order = {5: 0, 6: 1, 0: 2, 1: 3, 2: 4, 3: 5, 4: 6}
+    items.sort(key=lambda x: (order.get(x["weekday"], 9), x["start_time"]))
+    return {"items": items}
+
+
+def _counselor_of_user(db: Session, user) -> Counselor | None:
+    return db.scalar(select(Counselor).where(Counselor.user_id == user.id))
+
+
+@router.get("/me/availability")
+def my_availability(
+    db: Session = Depends(get_db),
+    actor: User = Depends(get_current_user),
+) -> dict:
+    """بازه‌های هفتگی مشاور جاری (کارتابل مشاور)."""
+    c = _counselor_of_user(db, actor)
+    if c is None:
+        return {"items": [], "counselor_id": None, "configured": False}
+    rows = db.scalars(
+        select(CounselorAvailability)
+        .where(CounselorAvailability.counselor_id == c.id)
+        .order_by(CounselorAvailability.weekday, CounselorAvailability.start_time)
+    ).all()
+    return {**_availability_out(rows), "counselor_id": str(c.id), "configured": True}
+
+
+@router.put("/me/availability")
+def set_my_availability(
+    payload: AvailabilitySet,
+    db: Session = Depends(get_db),
+    actor: User = Depends(get_current_user),
+) -> dict:
+    """جایگزینی کامل بازه‌های هفتگی مشاور جاری."""
+    c = _counselor_of_user(db, actor)
+    if c is None:
+        raise HTTPException(status_code=404, detail="پروندهٔ مشاور برای حساب شما یافت نشد")
+    windows: list[tuple[int, dtime, dtime, bool]] = []
+    seen: set[tuple[int, str]] = set()
+    for w in payload.items:
+        st = _parse_hhmm(w.start_time, "شروع")
+        en = _parse_hhmm(w.end_time, "پایان")
+        if en <= st:
+            raise HTTPException(status_code=422, detail="ساعت پایان هر بازه باید بعد از ساعت شروع باشد")
+        if w.weekday in seen:
+            # چند بازه در یک روز مجاز است ولی همان ساعت شروع تکراری نیست
+            pass
+        key = (w.weekday, st.strftime("%H:%M"))
+        if key in seen:
+            raise HTTPException(status_code=409, detail="برای یک روز نمی‌توان دو بازه با ساعت شروع یکسان ثبت کرد")
+        seen.add(key)
+        windows.append((w.weekday, st, en, w.is_active))
+    for row in db.scalars(
+        select(CounselorAvailability).where(CounselorAvailability.counselor_id == c.id)
+    ).all():
+        db.delete(row)
+    for weekday, st, en, active in windows:
+        db.add(
+            CounselorAvailability(
+                counselor_id=c.id, weekday=weekday, start_time=st, end_time=en, is_active=active
+            )
+        )
+    db.commit()
+    record_audit(db, action="counselor.availability_updated", actor_user_id=actor.id,
+                 entity_type="counselor", entity_id=str(c.id),
+                 detail={"windows": len(windows)})
+    rows = db.scalars(
+        select(CounselorAvailability)
+        .where(CounselorAvailability.counselor_id == c.id)
+        .order_by(CounselorAvailability.weekday, CounselorAvailability.start_time)
+    ).all()
+    return {**_availability_out(rows), "counselor_id": str(c.id), "configured": True}
+
+
+@router.get("/{counselor_id}/availability")
+def counselor_availability(
+    counselor_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _actor: User = Depends(require_roles("SYSTEM_ADMIN", "ORG_MANAGER", "TECHNICAL_SUPERVISOR", "RECEPTION", "COUNSELOR")),
+) -> dict:
+    """بازه‌های هفتگی یک مشاور — برای پذیرش/مدیر هنگام ثبت نوبت."""
+    c = db.get(Counselor, counselor_id)
+    if c is None:
+        raise HTTPException(status_code=404, detail="مشاور یافت نشد")
+    rows = db.scalars(
+        select(CounselorAvailability)
+        .where(CounselorAvailability.counselor_id == c.id)
+        .order_by(CounselorAvailability.weekday, CounselorAvailability.start_time)
+    ).all()
+    return {**_availability_out(rows), "counselor_id": str(c.id), "configured": bool(rows)}

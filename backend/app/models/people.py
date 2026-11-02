@@ -1,7 +1,7 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -93,6 +93,38 @@ class Counselor(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, unique=True
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CounselorAvailability(Base):
+    """فاز ۷۴ - روزها و ساعت‌های مشاورهٔ هر مشاور.
+
+    مشاور در کارتابل خودش (کارتابل مشاور) بازه‌های هفتگی‌اش را تعریف می‌کند؛
+    پس از آن ثبت/جابه‌جایی نوبت و رزرو آنلاین فقط در همین بازه‌ها پذیرفته
+    می‌شود. قرارداد weekday با ``date.weekday()`` یکسان است:
+    دوشنبه=0 … یکشنبه=6 (شنبه=5، جمعه=4). اگر مشاور هیچ بازه‌ای تعریف
+    نکرده باشد، رفتار قبلی (ساعت‌های پیش‌فرض سامانه) برقرار می‌ماند.
+    """
+
+    __tablename__ = "counselor_availabilities"
+    __table_args__ = (
+        CheckConstraint("weekday BETWEEN 0 AND 6", name="ck_counselor_availability_weekday"),
+        CheckConstraint("end_time > start_time", name="ck_counselor_availability_range"),
+        UniqueConstraint("counselor_id", "weekday", "start_time", name="uq_counselor_availability_slot"),
+        Index("ix_counselor_availability_counselor", "counselor_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    counselor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("counselors.id", ondelete="CASCADE"), nullable=False
+    )
+    weekday: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_time: Mapped[time] = mapped_column(nullable=False)
+    end_time: Mapped[time] = mapped_column(nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

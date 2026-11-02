@@ -9,6 +9,8 @@ class UserCreate(BaseModel):
     email: str | None = Field(default=None, max_length=255)
     mobile: str | None = Field(default=None, max_length=20)
     roles: list[str] = Field(default_factory=list)
+    # فاز ۷۴: انتساب کاربر به سازمان برای ایزولاسیون دادهٔ سازمانی
+    organization_id: str | None = Field(default=None, max_length=64)
 
 
 class UserUpdate(BaseModel):
@@ -16,6 +18,8 @@ class UserUpdate(BaseModel):
     email: str | None = Field(default=None, max_length=255)
     mobile: str | None = Field(default=None, max_length=20)
     status: str | None = Field(default=None, max_length=30)
+    # فاز ۷۴: تغییر سازمان کاربر (None = بدون تغییر؛ "" = حذف انتساب)
+    organization_id: str | None = Field(default=None, max_length=64)
 
 
 class RolesUpdate(BaseModel):
