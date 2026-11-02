@@ -128,11 +128,13 @@ def list_org_exam_results(
 ) -> dict:
     stmt = select(OrgProgram).order_by(OrgProgram.created_at.desc())
     org_id = _actor_org_id(actor)
-    if org_id is not None:
-        stmt = stmt.where(OrgProgram.organization_id == org_id)
     roles = _roles(actor)
-    if not (roles & set(STAFF_ROLES)):
-        # اعضای عادی (مثلاً متقاضی): فقط برنامه‌هایی که عضو آن‌ها هستند
+    if org_id is not None:
+        # فاز ۷۴ (اصلاح ۷۴ب): کاربر منتسب‌شده به سازمان همهٔ برنامه‌های
+        # سازمان خودش را می‌بیند — بدون نیاز به عضویت صریح در برنامه.
+        stmt = stmt.where(OrgProgram.organization_id == org_id)
+    elif not (roles & set(STAFF_ROLES)):
+        # کاربر بدون اسکوپ سازمانی: فقط برنامه‌هایی که عضو آن‌ها هستند
         stmt = stmt.where(
             OrgProgram.id.in_(
                 select(OrgProgramMember.program_id).where(OrgProgramMember.user_id == actor.id)
@@ -162,7 +164,9 @@ def get_org_exam_result(
         raise HTTPException(status_code=403, detail="دسترسی به آزمون‌های این سازمان مجاز نیست")
     roles = _roles(actor)
     is_member_only = not (roles & set(STAFF_ROLES))
-    if is_member_only and not _is_program_member(db, p.id, actor.id):
+    # فاز ۷۴ (اصلاح ۷۴ب): کاربر سازمان‌دار به نتایج سازمان خودش دسترسی دارد
+    # حتی بدون عضویت صریح؛ ردیف نتیجهٔ او پایین‌تر از تلاش‌هایش ساخته می‌شود.
+    if is_member_only and org_id is None and not _is_program_member(db, p.id, actor.id):
         raise HTTPException(status_code=403, detail="دسترسی مجاز نیست")
 
     out = _program_out(db, p)
@@ -223,6 +227,37 @@ def get_org_exam_result(
                 "full_name": m.full_name,
                 "employee_code": m.employee_code,
                 "unit": m.unit,
+                "done_count": done,
+                "total_tests": total,
+                "progress_percent": round(100 * done / total) if total else 0,
+                "tests": per_test,
+            }
+        )
+    # فاز ۷۴ (اصلاح ۷۴ب): کاربر سازمانی که عضو صریح برنامه نیست — ردیف
+    # نتیجهٔ خودش از روی تلاش‌های واقعی‌اش ساخته می‌شود تا نتیجهٔ خودش را ببیند.
+    if is_member_only and org_id is not None and not any(m.user_id == actor.id for m in members):
+        done, total, attempts = _member_done_tests(db, p.id, actor.id)
+        per_test = []
+        for _, t in test_rows:
+            a = attempts.get(str(t.id))
+            per_test.append(
+                {
+                    "test_id": str(t.id),
+                    "title": t.title,
+                    "done": a is not None,
+                    "score": float(a.score) if a is not None and a.score is not None else None,
+                    "interpretation_label": a.interpretation_label if a is not None else None,
+                    "completed_at": a.created_at.isoformat() if a is not None else None,
+                }
+            )
+        member_items.append(
+            {
+                "id": "self",
+                "user_id": str(actor.id),
+                "username": actor.username,
+                "full_name": actor.display_name or actor.username,
+                "employee_code": None,
+                "unit": None,
                 "done_count": done,
                 "total_tests": total,
                 "progress_percent": round(100 * done / total) if total else 0,

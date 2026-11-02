@@ -238,8 +238,12 @@ def list_programs(
     # ۲) عضو عادی برنامه (مثلاً متقاضی) فقط برنامه‌های خودش را می‌بیند.
     org_scope = _actor_org_scope(actor)
     if org_scope is not None:
+        # فاز ۷۴ (اصلاح ۷۴ب): هر کاربر منتسب‌شده به سازمان — مستقل از نقش —
+        # همهٔ برنامه‌های همان سازمان را می‌بیند؛ عضویت صریح در برنامه فقط
+        # برای محاسبهٔ پیشرفت/نتیجه لازم است، نه برای دیدن.
         stmt = stmt.where(OrgProgram.organization_id == org_scope)
-    if not _is_staff(actor):
+    elif not _is_staff(actor):
+        # کاربر بدون اسکوپ سازمانی: فقط برنامه‌هایی که عضو آن‌هاست
         stmt = stmt.where(OrgProgram.id.in_(_member_programs_stmt(actor)))
     if organization_id:
         stmt = stmt.where(OrgProgram.organization_id == _parse_uuid(organization_id, "شناسهٔ سازمان"))
@@ -296,9 +300,12 @@ def get_program_workdesk(
     p = _get_program(db, program_id)
     # فاز ۷۴ — کنترل دسترسی داده:
     org_scope = _actor_org_scope(actor)
-    if org_scope is not None and p.organization_id != org_scope:
-        raise HTTPException(status_code=403, detail="دسترسی به برنامه‌های این سازمان مجاز نیست")
-    if not _is_staff(actor):
+    if org_scope is not None:
+        # فاز ۷۴ (اصلاح ۷۴ب): کاربر منتسب‌شده به سازمان به کارتابل همهٔ
+        # برنامه‌های سازمان خودش دسترسی دارد (حتی بدون عضویت صریح).
+        if p.organization_id != org_scope:
+            raise HTTPException(status_code=403, detail="دسترسی به برنامه‌های این سازمان مجاز نیست")
+    elif not _is_staff(actor):
         member = db.scalars(
             select(OrgProgramMember).where(
                 OrgProgramMember.program_id == p.id, OrgProgramMember.user_id == actor.id

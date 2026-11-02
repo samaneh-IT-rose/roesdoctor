@@ -143,9 +143,10 @@ def main() -> int:
                 f"FK پرونده: {OK if state['fk_case'] else BAD}"
             )
             if state["alembic"] != "0044_user_counseling_file":
+                # اطلاع‌رسانی خنثی — ملاکِ واقعی، وارسی اشیای پایین است نه شمارهٔ سر
                 print(
-                    f"  [{BAD}] alembic_version روی سرِ ۰۰۴۴ نیست "
-                    f"(«{state['alembic']}») — ابتدا «alembic upgrade head» باید اجرا شود."
+                    f"  [i] alembic_version اکنون «{state['alembic']}» است "
+                    "(جدیدتر از پایهٔ فاز ۷۰) — ملاک، وارسی اشیای زیر است."
                 )
             miss = _missing(state)
             if not miss:
