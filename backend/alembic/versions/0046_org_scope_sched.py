@@ -14,13 +14,20 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0046_org_scope_counselor_availability"
+revision = "0046_org_scope_sched"
 down_revision = "0045_rbac_menu_matrix"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
+    # --- ایمنی: پهن‌کردن version_num تا شناسه‌های بلند آینده هم‌یشه جا شوند
+    # (revision «0046_org_scope_counselor_availability» با ۳۶ نویسه در
+    #  varchar(32) پیش‌فرض جا نمی‌شد و ارتقا شکست خورد)
+    op.execute(
+        "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE varchar(128)"
+    )
+
     # --- users.organization_id
     op.add_column(
         "users",
