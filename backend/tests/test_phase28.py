@@ -256,7 +256,9 @@ def _mk_tariff(client, headers, service_id, amount, vf, vt=None, currency="IRR")
 def test_tariff_overlap_rejected(client, manager_headers, _tariff_fixtures):
     """B07 پذیرش: هم‌پوشانی ناسازگار بازه‌ها رد شود."""
     svc = _tariff_fixtures
-    y, m = date.today().year + 1, date.today().month
+    # ماه ثابت ۳۱روزه (ژانویهٔ سال بعد) — آزمون مستقل از تقویم؛ «ماه جاری» در
+    # ماه‌های ۳۰روزه/اسفند روی روز ۳۱ می‌شکست (422 تاریخ نامعتبر، آبان ۱۴۰۵).
+    y, m = date.today().year + 1, 1
     v1 = _mk_tariff(client, manager_headers, svc["id"], 500000, f"{y}-{m:02d}-01", f"{y}-{m:02d}-28")
     # هم‌پوشانی کامل و جزئی رد می‌شود
     r = client.post("/api/v1/tariffs", headers=manager_headers, json={

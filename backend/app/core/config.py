@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "Rosepsy"
-    app_version: str = "0.55.0"
+    app_version: str = "0.55.1"
     api_prefix: str = "/api/v1"
     environment: str = "production"
 
@@ -26,9 +26,16 @@ class Settings(BaseSettings):
 
     # ورود یکپارچه (SSO) با رز هاب — Rose Hub (BASIC flow)
     # clientSecret اختصاصی این سامانه در رز هاب؛ در استقرار واقعی با env بازنویسی شود
+    # فاز ۷۲: مقصد SP-initiated صفحهٔ ورود خودِ درگاه رز هاب روی نشانی عمومی
+    # است با next= مسیر launch — رز هاب پس از ورود، خودش به /api/sso/launch
+    # برمی‌گردد و توکن را به این سامانه می‌فرستد. مقصد قبلی (launch مستقیم)
+    # برای کاربر واردنشده 307 به http://localhost:8082/login می‌داد که در
+    # مرورگر کاربر باز نمی‌شود و جریان SSO می‌شکست.
     rose_hub_client_id: str = "rose-psy-5c3f9b"
     rose_hub_client_secret: str = "1d5f9b3e7a0c4e82f6b0d2a8c4e1f735a9d0c6e2b8f4a0d6c2e8b1f5a3d7c940"
-    rose_hub_launch_url: str = "http://130.185.73.157:8082/api/sso/launch?clientId=rose-psy-5c3f9b"
+    rose_hub_launch_url: str = (
+        "http://130.185.73.157:8082/login?next=%2Fapi%2Fsso%2Flaunch%3FclientId%3Drose-psy-5c3f9b"
+    )
 
 
     # فاز ۳۷ - ADR-04: Object Storage پلاگین‌پذیر (تصمیم سند: MinIO/S3)

@@ -180,6 +180,43 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
     )
 
 
+@router.get("/session-probe")
+def session_probe(request: Request, db: Session = Depends(get_db)) -> dict:
+    """فاز ۷۲ — پراپ بی‌صدای نشست برای بازیابی ورودِ یکپارچه (SSO) رز هاب.
+
+    چرا این endpoint؟ اسپای پنل پس از فاز ۷۱ (حذف خطای 401 بی‌مصرف کنسول)
+    وقتی توکن دسترسی (حافظه) و پرچم نشست (localStorage) ندارد، دیگر
+    ``/auth/me`` را صدا نمی‌زند. ولی کاربرِ برگشته از رز هاب فقط کوکی
+    refresh (HttpOnly) دارد و هیچ نشانه‌ای سمت کلاینت — بدون این پراپ نشستِ
+    او هرگز بازیابی نمی‌شد و با وجود کوکی معتبر، در صفحهٔ ورود گیر می‌کرد
+    (عارضهٔ میدانی: «از طریق SSO وارد صفحه می‌شود و وارد برنامه نمی‌شود»).
+
+    قرارداد: همیشه 200 — حتی بدون کوکی. کلید «authenticated» تنها حقیقتِ
+    نشست را می‌گوید تا کنسول مرورگر برای بازدیدکنندهٔ ناشناس هم بی‌خطا بماند
+    (پراپ = یک درخواست 200 ارزان، نه یک 401 پرسر و صدا). اعتبارسنجی دقیقاً
+    همان قواعد /auth/refresh است: کوکی موجود، نشست زنده (بدون ابطال/انقضا)
+    و حساب ACTIVE. این endpoint توکن نمی‌چرخاند و اثر جانبی ندارد.
+    """
+    raw = request.cookies.get(REFRESH_COOKIE)
+    if raw:
+        session = db.scalar(
+            select(AuthSession).where(AuthSession.refresh_token_hash == hash_token(raw))
+        )
+        now = datetime.now(timezone.utc)
+        if (
+            session is not None
+            and session.revoked_at is None
+            and session.expires_at >= now
+        ):
+            user = db.get(User, session.user_id)
+            if user is not None and user.status == UserStatus.ACTIVE:
+                return {
+                    "authenticated": True,
+                    "must_change_password": user.must_change_password,
+                }
+    return {"authenticated": False}
+
+
 @router.post("/logout")
 def logout(
     request: Request,

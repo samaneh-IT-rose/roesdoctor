@@ -1,5 +1,5 @@
 import {
-  Alert, Box, Button, Card, CardContent, Divider, Stack, Tab, Tabs, TextField, Typography,
+  Alert, Box, Button, Card, CardContent, Divider, Link, Stack, Tab, Tabs, TextField, Typography,
 } from "@mui/material";
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -9,9 +9,15 @@ import { requestOtp } from "../api/auth";
 import type { OtpRequestResponse } from "../api/auth";
 
 // ورود یکپارچه (SSO) با رز هاب — Rose Hub
+// فاز ۷۲: مقصد دکمهٔ SSO صفحهٔ ورود خودِ درگاه رز هاب روی نشانی عمومی
+// (130.185.73.157:8082) است با next= مسیر launch؛ رز هاب پس از ورود، خودش
+// به /api/sso/launch برمی‌گردد و توکن را به رز سای می‌فرستد. مقصد قبلی
+// (launch مستقیم) برای کاربرِ واردنشده در رز هاب 307 به localhost:8082
+// می‌داد که در مرورگر کاربر باز نمی‌شود — همان «SSO وارد برنامه نمی‌شود».
+const ROSE_HUB_PORTAL_URL = "http://130.185.73.157:8082";
 const ROSE_HUB_LAUNCH_URL =
   (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_ROSE_HUB_LAUNCH_URL ||
-  "http://130.185.73.157:8082/api/sso/launch?clientId=rose-psy-5c3f9b";
+  "http://130.185.73.157:8082/login?next=%2Fapi%2Fsso%2Flaunch%3FclientId%3Drose-psy-5c3f9b";
 
 type LoginMode = "password" | "otp";
 
@@ -182,6 +188,18 @@ export default function LoginPage() {
           >
             ورود یکپارچه با رز هاب (SSO)
           </Button>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block", textAlign: "center" }}>
+            درگاه رز هاب:{" "}
+            <Link
+              href={ROSE_HUB_PORTAL_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              underline="hover"
+              sx={{ direction: "ltr", display: "inline-block" }}
+            >
+              130.185.73.157:8082
+            </Link>
+          </Typography>
         </CardContent>
       </Card>
     </Box>

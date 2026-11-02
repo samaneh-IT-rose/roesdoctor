@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import * as authApi from "../api/auth";
 import type { Me } from "../api/auth";
+import { ensureAccessToken } from "../api/client";
 import { tokenStore, sessionFlag } from "./tokenStore";
 import {
   endImpersonation,
@@ -33,16 +34,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // بازیابی نشست با Cookie هنگام بارگذاری (بند ۱۰: مجوز صفحات براساس /auth/me)
   // فاز ۶۰: اگر حالت مشاهده فعال باشد، توکن کاربر هدف از sessionStorage
   // بازگردانی می‌شود تا /auth/me با هویت همان کاربر پاسخ دهد.
-  // فاز ۷۱: اگر کاربر اصلاً وارد نشده (نه توکن، نه پرچم نشست، نه حالت مشاهده)،
-  // /auth/me اصلاً صدا زده نمی‌شود — دیگر خطای 401 بی‌مصرف در کنسول مرورگر نداریم.
+  // فاز ۷۱: اگر کاربر اصلاً وارد نشده، /auth/me صدا زده نمی‌شود — بدون خطای
+  // 401 بی‌مصرف در کنسول مرورگر.
+  // فاز ۷۲: «وارد نشده» با «فقط کوکی refresh دارد» یکی نیست! دو سناریو با یک
+  // مسیر حل می‌شوند: (الف) کاربرِ برگشته از مسیر SSO رز هاب که هیچ نشانهٔ
+  // محلی ندارد (توکن فقط در حافظه است و پرچم localStorage ست نشده) و فقط
+  // کوکی refresh معتبر دارد — پیش از این ترمیم، اسپای او را ناشناس می‌انگاشت
+  // و با وجود ورود موفق SSO در صفحهٔ ورود گیر می‌کرد؛ (ب) ری‌لود صفحه توسط
+  // کاربر واردشده که توکن حافظه‌اش پاک شده — به‌جای fetchMe با 401 و
+  // refresh در interceptor، حالا پراپ بی‌صدای session-probe (همیشه 200 —
+  // کنسول در همهٔ حالت‌ها بی‌خطا می‌ماند) حقیقت نشست را می‌پرسد؛ اگر کوکی
+  // زنده بود توکن با /auth/refresh بازیابی و ورود بدون گذر از صفحهٔ login
+  // کامل می‌شود، وگرنه کاربر ناشناس است.
   useEffect(() => {
     const imp = readImpersonation();
     if (imp && !tokenStore.accessToken) {
       tokenStore.accessToken = imp.token;
     }
-    if (!tokenStore.accessToken && !sessionFlag.has()) {
-      setUser(null);
-      setLoading(false);
+    if (!tokenStore.accessToken) {
+      authApi
+        .probeSession()
+        .then(async (probe) => {
+          if (!probe.authenticated) {
+            sessionFlag.clear();
+            setUser(null);
+            return undefined;
+          }
+          const token = await ensureAccessToken();
+          if (!token) {
+            // مسابقهٔ نادر (انقضای کوکی میان پراپ و refresh) — ناشناس می‌مانیم
+            sessionFlag.clear();
+            setUser(null);
+            return undefined;
+          }
+          sessionFlag.set();
+          return authApi.fetchMe();
+        })
+        .then((me) => setUser(me ?? null))
+        .catch(() => {
+          sessionFlag.clear();
+          setUser(null);
+        })
+        .finally(() => setLoading(false));
       return;
     }
     authApi

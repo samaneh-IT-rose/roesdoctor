@@ -46,6 +46,23 @@ export interface LoginResponse {
   must_change_password: boolean;
 }
 
+/** فاز ۷۲ — پراپ بی‌صدای نشست (همیشه 200، بدون 401 کنسول).
+ *
+ * برای بوت اسپای وقتی توکن محلی و پرچم نشست وجود ندارد: کاربرِ برگشته از مسیر
+ * SSO رز هاب فقط کوکی refresh (HttpOnly) دارد؛ پراپ می‌گوید آیا نشست زنده‌ای
+ * پشت کوکی هست تا توکن با /auth/refresh بازیابی شود — بدون آنکه برای
+ * بازدیدکنندهٔ ناشناس خطایی در کنسول مرورگر بیفتد.
+ */
+export interface SessionProbe {
+  authenticated: boolean;
+  must_change_password?: boolean;
+}
+
+export async function probeSession(): Promise<SessionProbe> {
+  const res = await apiClient.get<SessionProbe>("/auth/session-probe");
+  return res.data;
+}
+
 export interface UserRow {
   id: string;
   username: string;
