@@ -1,5 +1,5 @@
 import axios, { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from "axios";
-import { tokenStore } from "../auth/tokenStore";
+import { tokenStore, sessionFlag } from "../auth/tokenStore";
 import { endImpersonation, readImpersonation } from "../auth/impersonation";
 
 /**
@@ -173,6 +173,7 @@ apiClient.interceptors.response.use(unwrapEnvelope, async (error: AxiosError) =>
       return apiClient(original!);
     }
     tokenStore.accessToken = null;
+    sessionFlag.clear(); // فاز ۷۱: نشست تمام شد — دفعهٔ بعد پروب /auth/me زده نشود (بدون 401 کنسول)
     if (!window.location.pathname.startsWith(`${ROUTER_BASE}/login`)) {
       window.location.href = `${ROUTER_BASE}/login`;
     }

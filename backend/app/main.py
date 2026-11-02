@@ -83,6 +83,16 @@ async def _lifespan(_app: FastAPI):
             _logger.warning("startup self-heal repaired: %s", ", ".join(repaired))
     except Exception:  # noqa: BLE001
         _logger.exception("startup phase70 self-heal failed (non-fatal)")
+    # فاز ۷۱ — خودترمیم ماتریس منوها (role_menu_permissions + seed پیش‌فرض)
+    try:
+        from app.db.ensure_phase71 import ensure_phase71_schema
+        from app.db.session import engine
+
+        repaired = ensure_phase71_schema(engine)
+        if repaired:
+            _logger.warning("startup phase71 self-heal repaired: %s", ", ".join(repaired))
+    except Exception:  # noqa: BLE001
+        _logger.exception("startup phase71 self-heal failed (non-fatal)")
     yield
 
 
@@ -181,6 +191,11 @@ app.add_middleware(FinancialIdempotencyMiddleware)
 # ۴۲۹ روی v2 پاکت‌بندی می‌شود و روی v1 هدرهای انقضا می‌گیرد؛ درخواستِ رد‌شده
 # هرگز رزرو کلید idempotency نمی‌کند (بیرونی‌تر از میان‌افزار مالی)
 app.add_middleware(RateLimitMiddleware)
+# فاز ۷۱ — دروازهٔ ماتریس منوها: بین سقف نرخ و پاکت تا 403 آن روی v2
+# پاکت‌بندی شود و درخواستِ ردشده هرگز به سقف نرخ و دیتابیس endpoint نرسد
+from app.core.menu_access import MenuAccessMiddleware  # noqa: E402
+
+app.add_middleware(MenuAccessMiddleware)
 app.add_middleware(EnvelopeMiddleware)
 # فاز ۴۱ - ADR-03 گام ۴: انقضای اعلام‌شده v1 (هدرهای Deprecation/Sunset/Warning
 # فقط روی /api/v1؛ readonly = کلید اضطراری چرخه حذف) — بیرونی‌ترین لایه

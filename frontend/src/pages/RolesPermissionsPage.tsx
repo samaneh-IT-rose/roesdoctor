@@ -16,13 +16,17 @@ import {
   Paper,
   Select,
   Stack,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  Tabs,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -30,19 +34,27 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { errDetail } from "../api/client";
 import {
   DATA_SCOPE_OPTIONS,
+  MENU_LEVEL_OPTIONS,
   createRole,
   deleteRole,
+  fetchMenuCatalog,
   fetchPermissionCatalog,
+  fetchRoleMenus,
   fetchRoles,
+  saveRoleMenus,
   saveRolePermissions,
+  type MenuLevel,
+  type RoleMenus,
 } from "../api/rbac";
 
 /**
- * فاز ۵۲ - صفحهٔ «نقش‌ها و دسترسی‌ها»:
- * - سمت راست: فهرست نقش‌ها (+ نقش جدید)؛ سمت چپ: ماتریس دسترسی نقش انتخابی؛
- * - ماتریس: هر سطر یک بخش (صفحه‌های پنل) و هر ستون یک دسترسی با تیک گرافیکی؛
+ * فاز ۵۲ + ۷۱ - صفحهٔ «نقش‌ها و دسترسی‌ها»:
+ * - تب «منوها و زیرمنوها»: ماتریس سه‌سطحی (هیچ/دیدن/فقط خواندن/ویرایش) برای
+ *   همهٔ منوها و زیرمنوهای پنل — هر سلول برای هر نقش قابل تغییر است؛
+ * - تب «دسترسی‌های عملیاتی»: ماتریس تیک‌های ریزدانهٔ عملیاتی (فاز ۵۲)؛
  * - «سطح دسترسی روی داده» نقش با همان رابط تیک/لیست انتخاب می‌شود؛
- * - ذخیره با PUT /rbac/roles/{code} — اثر عملیاتی از طریق require_perm سرور.
+ * - اعمال عملی: سمت سرور (MenuAccessMiddleware + require_perm) و سمت پنل
+ *   (فیلتر منوی Layout با menu_permissions کاربر).
  */
 
 export default function RolesPermissionsPage() {
@@ -51,6 +63,7 @@ export default function RolesPermissionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [tab, setTab] = useState(0);
 
   const catalog = useQuery({ queryKey: ["rbac-catalog"], queryFn: fetchPermissionCatalog });
   const roles = useQuery({ queryKey: ["rbac-roles"], queryFn: fetchRoles });
@@ -92,6 +105,20 @@ export default function RolesPermissionsPage() {
     },
   });
 
+  const saveMenus = useMutation({
+    mutationFn: (p: { code: string; menus: Record<string, MenuLevel | null> }) =>
+      saveRoleMenus(p.code, p.menus),
+    onSuccess: (r: RoleMenus) => {
+      setSuccess("ماتریس منوها ذخیره شد و از همین لحظه اعمال می‌شود");
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["rbac-role-menus", r.role_code] });
+    },
+    onError: (e) => {
+      setError(errDetail(e));
+      setSuccess(null);
+    },
+  });
+
   if (catalog.isLoading || roles.isLoading) {
     return <CircularProgress sx={{ mx: "auto", display: "block", mt: 8 }} />;
   }
@@ -109,6 +136,11 @@ export default function RolesPermissionsPage() {
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
+
+      <Tabs value={tab} onChange={(_e, v) => setTab(v)} sx={{ borderBottom: 1, borderColor: "divider" }}>
+        <Tab label="منوها و زیرمنوها (دیدن / خواندن / ویرایش)" />
+        <Tab label="دسترسی‌های عملیاتی" />
+      </Tabs>
 
       <Stack direction="row" spacing={2} alignItems="flex-start">
         {/* ستون نقش‌ها */}
@@ -150,7 +182,15 @@ export default function RolesPermissionsPage() {
         </Paper>
 
         {/* ماتریس دسترسی */}
-        {selected && (
+        {selected && tab === 0 && (
+          <MenuMatrix
+            key={`menus-${selected.code}`}
+            role={selected}
+            saving={saveMenus.isPending}
+            onSave={(menus) => saveMenus.mutate({ code: selected.code, menus })}
+          />
+        )}
+        {selected && tab === 1 && (
           <PermissionMatrix
             key={selected.code}
             role={selected}
@@ -187,6 +227,233 @@ export default function RolesPermissionsPage() {
         }}
       />
     </Stack>
+  );
+}
+
+
+function MenuMatrix({
+  role,
+  saving,
+  onSave,
+}: {
+  role: { code: string; title: string; is_system: boolean };
+  saving: boolean;
+  onSave: (menus: Record<string, MenuLevel | null>) => void;
+}) {
+  // فاز ۷۱ — ماتریس «منو × نقش» با چهار حالت: هیچ / دیدن / فقط خواندن / ویرایش
+  const catalog = useQuery({ queryKey: ["rbac-menu-catalog"], queryFn: fetchMenuCatalog });
+  const current = useQuery({
+    queryKey: ["rbac-role-menus", role.code],
+    queryFn: () => fetchRoleMenus(role.code),
+  });
+
+  // فاز ۷۱: مقدار null صریح = «هیچ» (حذف ردیف سمت سرور) — کلیدِ غایب یعنی
+  // دست‌نخورده از مقدار فعلی؛ تا مدیر بتواند سطح هر منو را واقعاً پس بگیرد.
+  const [levels, setLevels] = useState<Record<string, MenuLevel | null> | null>(null);
+  const menus: Record<string, MenuLevel | null> = levels ?? current.data?.menus ?? {};
+  const locked = current.data?.locked ?? role.code === "SYSTEM_ADMIN";
+
+  const setLevel = (key: string, level: MenuLevel | null) => {
+    setLevels((prev) => {
+      const base = { ...(prev ?? current.data?.menus ?? {}) } as Record<string, MenuLevel | null>;
+      base[key] = level; // null هم ثبت می‌شود تا در PUT «هیچ» اعمال شود
+      return base;
+    });
+  };
+
+  const setGroup = (keys: string[], level: MenuLevel | null) => {
+    setLevels((prev) => {
+      const base = { ...(prev ?? current.data?.menus ?? {}) } as Record<string, MenuLevel | null>;
+      keys.forEach((k) => {
+        base[k] = level;
+      });
+      return base;
+    });
+  };
+
+  if (catalog.isLoading || current.isLoading) {
+    return <CircularProgress sx={{ mx: "auto", display: "block", mt: 6 }} />;
+  }
+
+  const groups = catalog.data?.groups ?? [];
+  const grantedCount = Object.values(menus).filter((lv) => !!lv).length;
+
+  return (
+    <Paper variant="outlined" sx={{ flex: 1, minWidth: 0 }}>
+      <Box sx={{ p: 1.5, borderBottom: 1, borderColor: "divider", display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap" }}>
+        <Typography variant="subtitle1" fontWeight={700}>
+          منوهای «{role.title}»
+        </Typography>
+        <Chip label={role.code} size="small" variant="outlined" />
+        <Chip size="small" color="primary" variant="outlined" label={`${grantedCount} منوی فعال`} />
+        <Box sx={{ flex: 1 }} />
+        <Button
+          variant="contained"
+          disabled={saving || locked}
+          onClick={() => onSave(menus)}
+        >
+          {saving ? "در حال ذخیره…" : "ذخیرهٔ ماتریس منوها"}
+        </Button>
+      </Box>
+
+      {locked ? (
+        <Alert severity="info" sx={{ m: 1.5 }}>
+          مدیر سامانه (SYSTEM_ADMIN) همیشه به همهٔ منوها با سطح «ویرایش» دسترسی دارد؛
+          این ماتریس برای اطمینان از قفل‌نشدن سامانه قابل تغییر نیست.
+        </Alert>
+      ) : (
+        <Alert severity="info" sx={{ m: 1.5 }}>
+          <b>دیدن</b> = منو نمایش داده می‌شود و فهرست/صفحهٔ اصلی بخش باز است؛{" "}
+          <b>فقط خواندن</b> = جزئیات رکوردها هم قابل مشاهده است ولی تغییری نمی‌تواند بدهد؛{" "}
+          <b>ویرایش</b> = ثبت/ویرایش/حذف کامل در آن بخش. «هیچ» یعنی منو پنهان و
+          مسیرهای API آن بخش روی سرور هم مسدود است. تغییرها بعد از ذخیره از
+          ورودِ بعدی کاربران اعمال می‌شود.
+        </Alert>
+      )}
+
+      <TableContainer sx={{ maxHeight: "58vh" }}>
+        <Table size="small" stickyHeader>
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ width: 260 }}>منو / زیرمنو</TableCell>
+              <TableCell align="center" sx={{ width: 320 }}>
+                سطح دسترسی (هیچ / دیدن / فقط خواندن / ویرایش)
+              </TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {groups.map((g) => {
+              const keys = g.items.map((it) => it.key);
+              const allSame = keys.every((k) => menus[k] === menus[keys[0]]);
+              return (
+                <FragmentRow
+                  key={g.key}
+                  groupTitle={g.title}
+                  keys={keys}
+                  allSame={allSame && keys.length > 0}
+                  groupLevel={allSame ? menus[keys[0]] ?? null : null}
+                  locked={locked}
+                  onGroup={(lv) => setGroup(keys, lv)}
+                  rows={g.items.map((it) => ({
+                    key: it.key,
+                    title: it.title,
+                    path: it.path,
+                    selfService: it.self_service,
+                    level: menus[it.key],
+                  }))}
+                  onRow={setLevel}
+                />
+              );
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
+      <Box sx={{ p: 1.5 }}>
+        <Typography variant="caption" color="text.secondary">
+          بخش‌های دارای نشان «شخصی» داده‌های خودِ کاربر است (کیف پول، گفتگو، پشتیبانی و…)؛
+          برای این بخش‌ها ماتریس فقط «نمایش منو» را کنترل می‌کند و دسترسی به داده‌ها با
+          مالکیت رکورد تضمین می‌شود.
+        </Typography>
+      </Box>
+    </Paper>
+  );
+}
+
+function FragmentRow({
+  groupTitle,
+  keys,
+  allSame,
+  groupLevel,
+  locked,
+  onGroup,
+  rows,
+  onRow,
+}: {
+  groupTitle: string;
+  keys: string[];
+  allSame: boolean;
+  groupLevel: MenuLevel | null;
+  locked: boolean;
+  onGroup: (level: MenuLevel | null) => void;
+  rows: { key: string; title: string; path: string; selfService: boolean; level: MenuLevel | null }[];
+  onRow: (key: string, level: MenuLevel | null) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <>
+      <TableRow sx={{ bgcolor: "action.hover" }}>
+        <TableCell colSpan={2}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Button size="small" onClick={() => setOpen((o) => !o)} sx={{ minWidth: 0, px: 1 }}>
+              {open ? "▾" : "▸"} {groupTitle}
+            </Button>
+            <Typography variant="caption" color="text.secondary">
+              ({keys.length} زیرمنو)
+            </Typography>
+            <Box sx={{ flex: 1 }} />
+            <Typography variant="caption" color="text.secondary">
+              اعمال روی کل منو:
+            </Typography>
+            <LevelPicker
+              value={allSame ? groupLevel ?? null : null}
+              indeterminate={!allSame}
+              disabled={locked}
+              onChange={(lv) => onGroup(lv)}
+            />
+          </Stack>
+        </TableCell>
+      </TableRow>
+      {open &&
+        rows.map((r) => (
+          <TableRow key={r.key} hover>
+            <TableCell>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="body2" fontWeight={600} sx={{ pr: 2 }}>
+                  {r.title}
+                </Typography>
+                <Chip size="small" variant="outlined" sx={{ fontSize: 10, height: 18 }} label={r.path} />
+                {r.selfService && (
+                  <Tooltip title="داده‌های شخصی خود کاربر — ماتریس فقط نمایش منو را کنترل می‌کند">
+                    <Chip size="small" sx={{ fontSize: 10, height: 18 }} color="default" label="شخصی" />
+                  </Tooltip>
+                )}
+              </Stack>
+            </TableCell>
+            <TableCell align="center">
+              <LevelPicker value={r.level ?? null} disabled={locked} onChange={(lv) => onRow(r.key, lv)} />
+            </TableCell>
+          </TableRow>
+        ))}
+    </>
+  );
+}
+
+function LevelPicker({
+  value,
+  disabled,
+  onChange,
+  indeterminate = false,
+}: {
+  value: MenuLevel | null;
+  disabled?: boolean;
+  onChange: (level: MenuLevel | null) => void;
+  indeterminate?: boolean;
+}) {
+  return (
+    <ToggleButtonGroup
+      exclusive
+      size="small"
+      value={value ?? ""}
+      disabled={disabled}
+      onChange={(_e, v: string | null) => onChange(v === "" || v === null ? null : (v as MenuLevel))}
+      sx={{ "& .MuiToggleButton-root": { px: 1.2, py: 0.2, fontSize: 12 } }}
+    >
+      {MENU_LEVEL_OPTIONS.map((o) => (
+        <ToggleButton key={o.value} value={o.value === "none" ? "" : o.value} title={o.hint}>
+          {o.value === "none" && indeterminate ? "–" : o.title}
+        </ToggleButton>
+      ))}
+    </ToggleButtonGroup>
   );
 }
 

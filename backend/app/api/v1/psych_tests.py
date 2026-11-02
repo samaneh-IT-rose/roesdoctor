@@ -670,18 +670,26 @@ def list_all_attempts(
     q: str = Query(default="", max_length=100),
     limit: int = Query(default=200, ge=1, le=500),
     db: Session = Depends(get_db),
-    _actor: User = Depends(require_roles(*VIEW_ROLES)),
+    actor: User = Depends(get_current_user),
 ) -> dict:
-    """آزمون‌های برگزارشدهٔ کل سامانه — «چه کسی، کدام آزمون، چه زمانی، چه نمره‌ای».
+    """آزمون‌های برگزارشده — «چه کسی، کدام آزمون، چه زمانی، چه نمره‌ای».
 
-    برای پذیرش/مدیر/مشاور: هویت آزمون‌دهنده (نام/نام کاربری/موبایل)، ابزار،
-    نمره، تفسیر، زمان، وضعیت دیده‌شدن و پروندهٔ متصل.
+    فاز ۷۱ — جداسازی داده:
+    - کارکنان (پذیرش/مدیر/مشاور/مسئول فنی): کل آزمون‌های سامانه با هویت
+      آزمون‌دهنده، نمره، تفسیر، وضعیت دیده‌شدن و پروندهٔ متصل؛
+    - سایر کاربران (مثلاً متقاضی): «فقط آزمون‌های خودش» — نه بیشتر.
     """
+    from app.models.rbac import effective_permissions
+
+    actor_roles = {r.code for r in actor.roles}
+    is_staff = bool(actor_roles.intersection(set(VIEW_ROLES))) or "*" in effective_permissions(actor.roles)
     stmt = (
         select(PsychAttempt, PsychTest, User)
         .join(PsychTest, PsychAttempt.test_id == PsychTest.id)
         .join(User, PsychAttempt.user_id == User.id)
     )
+    if not is_staff:
+        stmt = stmt.where(PsychAttempt.user_id == actor.id)
     if test_id is not None:
         stmt = stmt.where(PsychAttempt.test_id == test_id)
     if (term := (q or "").strip()):

@@ -24,6 +24,13 @@ export interface Me {
   roles: string[];
   /** فاز ۵۲: دسترسی‌های مؤثر (اجتماع نقش‌ها)؛ * یعنی همه — SYSTEM_ADMIN */
   permissions?: string[];
+  /** فاز ۷۱: ماتریس منوها — {menu_key: 'view'|'read'|'edit'}؛ کلیدِ غایب یعنی منو پنهان */
+  menu_permissions?: Record<string, string>;
+}
+
+/** سطح دسترسی کاربر به یک منو ('view'|'read'|'edit') یا undefined اگر پنهان است */
+export function menuLevel(me: Me | null, menuKey: string): string | undefined {
+  return me?.menu_permissions?.[menuKey];
 }
 
 /** بررسی دسترسی مؤثر کاربر (سمت کلاینت برای گیت منو/دکمه؛ سرور ملاک نهایی است) */

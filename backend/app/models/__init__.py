@@ -111,7 +111,14 @@ from app.models.wallet import (
     WalletEntryReason,
 )
 from app.models.user import ActivationToken, AuthSession, Role, User, UserStatus, user_roles_table
-from app.models.rbac import DATA_SCOPES, DATA_SCOPE_TITLES, Permission, effective_permissions
+from app.models.rbac import (
+    DATA_SCOPES,
+    DATA_SCOPE_TITLES,
+    Permission,
+    RoleMenuPermission,
+    effective_permissions,
+    user_menu_levels,
+)
 from app.models.agent import AgentMessage, AgentSession
 from app.models.chat import (
     Conversation,
@@ -149,7 +156,8 @@ __all__ = [
     "SlotClaim", "SlotClaimStatus", "StoredFile", "TariffVersion",
     "ServiceTopic", "Topic", "TreatmentPlan", "User", "UserScope", "UserStatus", "user_roles_table",
     "Wallet", "WalletEntry", "WalletEntryDirection", "WalletEntryReason",
-    "Permission", "DATA_SCOPES", "DATA_SCOPE_TITLES", "effective_permissions",
+    "Permission", "RoleMenuPermission", "user_menu_levels",
+    "DATA_SCOPES", "DATA_SCOPE_TITLES", "effective_permissions",
     "Conversation", "ConversationKind", "ConversationMember",
     "Message", "MessageKind", "TEXT_MAX_LEN", "VOICE_MAX_BYTES",
     "AgentSession", "AgentMessage",

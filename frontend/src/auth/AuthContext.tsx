@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import * as authApi from "../api/auth";
 import type { Me } from "../api/auth";
-import { tokenStore } from "./tokenStore";
+import { tokenStore, sessionFlag } from "./tokenStore";
 import {
   endImpersonation,
   readImpersonation,
@@ -33,21 +33,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // بازیابی نشست با Cookie هنگام بارگذاری (بند ۱۰: مجوز صفحات براساس /auth/me)
   // فاز ۶۰: اگر حالت مشاهده فعال باشد، توکن کاربر هدف از sessionStorage
   // بازگردانی می‌شود تا /auth/me با هویت همان کاربر پاسخ دهد.
+  // فاز ۷۱: اگر کاربر اصلاً وارد نشده (نه توکن، نه پرچم نشست، نه حالت مشاهده)،
+  // /auth/me اصلاً صدا زده نمی‌شود — دیگر خطای 401 بی‌مصرف در کنسول مرورگر نداریم.
   useEffect(() => {
     const imp = readImpersonation();
     if (imp && !tokenStore.accessToken) {
       tokenStore.accessToken = imp.token;
     }
+    if (!tokenStore.accessToken && !sessionFlag.has()) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
     authApi
       .fetchMe()
       .then((me) => setUser(me))
-      .catch(() => setUser(null))
+      .catch(() => {
+        sessionFlag.clear();
+        setUser(null);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
     const res = await authApi.login(username, password);
     tokenStore.accessToken = res.access_token;
+    sessionFlag.set();
     const me = await authApi.fetchMe();
     setUser(me);
     return me;
@@ -57,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginOtp = useCallback(async (mobile: string, code: string) => {
     const res = await authApi.verifyOtp(mobile, code);
     tokenStore.accessToken = res.access_token;
+    sessionFlag.set();
     const me = await authApi.fetchMe();
     setUser(me);
     return me;
@@ -67,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await authApi.logout();
     } finally {
       tokenStore.accessToken = null;
+      sessionFlag.clear();
       setUser(null);
     }
   }, []);

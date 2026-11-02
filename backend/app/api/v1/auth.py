@@ -203,6 +203,8 @@ def logout(
 def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     # فاز ۵۲: دسترسی‌های مؤثر برای گیت‌کردن منو/صفحه‌های پنل (SYSTEM_ADMIN → *)
     from app.api.deps import user_permissions
+    # فاز ۷۱: ماتریس منوها — {menu_key: level} برای فیلتر منوی پنل + دکمه‌ها
+    from app.models.rbac import user_menu_levels
 
     return {
         "id": str(user.id),
@@ -214,6 +216,7 @@ def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) ->
         "must_change_password": user.must_change_password,
         "roles": sorted(r.code for r in user.roles),
         "permissions": sorted(user_permissions(db, user)),
+        "menu_permissions": user_menu_levels(db, user),
     }
 
 
