@@ -1,4 +1,5 @@
 import { Box, Card, CardContent, Container, Stack, Typography } from "@mui/material";
+import Reveal from "./Reveal";
 import SectionTitle from "./SectionTitle";
 import { texts } from "../content/texts";
 
@@ -15,9 +16,9 @@ export default function Services() {
           }}
         >
           {texts.services.map((s, i) => (
+            <Reveal key={s.title} delay={(i % 4) * 90} variant="up" sx={{ height: "100%" }}>
             <Card
-              key={s.title}
-              className="hover-lift"
+              className="hover-lift card-shine"
               elevation={0}
               sx={{
                 height: "100%",
@@ -53,6 +54,7 @@ export default function Services() {
                 </Typography>
               </CardContent>
             </Card>
+            </Reveal>
           ))}
         </Box>
 

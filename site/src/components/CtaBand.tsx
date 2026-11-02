@@ -1,5 +1,6 @@
 import { Box, Button, Container, Stack, Typography } from "@mui/material";
 import { texts } from "../content/texts";
+import Reveal from "./Reveal";
 
 export default function CtaBand() {
   return (
@@ -14,6 +15,7 @@ export default function CtaBand() {
       <Box className="decor-blob" sx={{ width: 260, height: 260, background: "rgba(255,255,255,.10)", top: -90, left: -60 }} />
       <Box className="decor-ring" sx={{ width: 180, height: 180, bottom: -70, right: "8%", borderColor: "rgba(255,255,255,.18)" }} />
       <Container>
+        <Reveal variant="zoom">
         <Stack spacing={2} alignItems="center" textAlign="center">
           <Typography variant="h3" fontWeight={800} color="#fff" sx={{ fontSize: { xs: 26, md: 38 } }}>
             {texts.ctaBand.title}
@@ -39,6 +41,7 @@ export default function CtaBand() {
             </Button>
           </Stack>
         </Stack>
+        </Reveal>
       </Container>
     </Box>
   );

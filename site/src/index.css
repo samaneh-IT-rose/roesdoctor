@@ -2,6 +2,12 @@ html { scroll-behavior: smooth; }
 body { font-family: "Vazirmatn", Tahoma, sans-serif; background: #fbf7f4; color: #2e2228; overflow-x: hidden; }
 ::selection { background: rgba(168,58,84,.25); }
 
+/* اسکرول‌بار سفارشی */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #f7eef1; }
+::-webkit-scrollbar-thumb { background: #dcc2cb; border-radius: 99px; border: 2px solid #f7eef1; }
+::-webkit-scrollbar-thumb:hover { background: #c99a5b; }
+
 /* متن گرادیانی */
 .grad-text {
   background: linear-gradient(120deg,#a83a54 15%,#5c4a6e 85%);
@@ -10,10 +16,36 @@ body { font-family: "Vazirmatn", Tahoma, sans-serif; background: #fbf7f4; color:
   color: transparent;
 }
 
+/* متن درخشان (شیمر) — برای تیترها */
+.shimmer {
+  background: linear-gradient(110deg,#a83a54 30%,#c99a5b 46%,#a83a54 62%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmerMove 5.5s linear infinite;
+}
+@keyframes shimmerMove { to { background-position: -220% 0; } }
+
 /* بلوک‌های تزئینی هیرو */
 .decor-blob { position: absolute; border-radius: 50%; filter: blur(60px); pointer-events: none; }
 .decor-ring { position: absolute; border-radius: 50%; border: 2px dashed rgba(168,58,84,.25); pointer-events: none; animation: spin 40s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* اورورا — گرادیانت متحرک پس‌زمینهٔ هیرو */
+.aurora { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.aurora span {
+  position: absolute; display: block; border-radius: 50%;
+  filter: blur(70px); opacity: .55;
+  animation: auroraDrift 16s ease-in-out infinite alternate;
+}
+.aurora span:nth-child(2) { animation-duration: 21s; animation-delay: -6s; }
+.aurora span:nth-child(3) { animation-duration: 26s; animation-delay: -12s; }
+@keyframes auroraDrift {
+  0%   { transform: translate(0,0) scale(1); }
+  50%  { transform: translate(-60px,40px) scale(1.15); }
+  100% { transform: translate(50px,-50px) scale(.95); }
+}
 
 /* کارت شناور روی تصویر هیرو */
 .float-chip {
@@ -30,6 +62,54 @@ body { font-family: "Vazirmatn", Tahoma, sans-serif; background: #fbf7f4; color:
 /* هاور کارت‌ها */
 .hover-lift { transition: transform .28s ease, box-shadow .28s ease; }
 .hover-lift:hover { transform: translateY(-7px); box-shadow: 0 18px 40px rgba(168,58,84,.16) !important; }
+
+/* درخشش عبوری روی کارت (افکت فلش) */
+.card-shine { position: relative; overflow: hidden; }
+.card-shine::after {
+  content: "";
+  position: absolute; top: 0; bottom: 0;
+  right: -80%; width: 55%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.55), transparent);
+  transform: skewX(-18deg);
+  transition: right .75s ease;
+  pointer-events: none;
+}
+.card-shine:hover::after { right: 130%; }
+
+/* دکمه با فلش نور */
+.shine-btn { position: relative; overflow: hidden; }
+.shine-btn::before {
+  content: "";
+  position: absolute; top: 0; bottom: 0; right: -75%;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.45), transparent);
+  transform: skewX(-20deg);
+  transition: right .6s ease;
+}
+.shine-btn:hover::before { right: 135%; }
+
+/* حاشیهٔ گرادیانی چرخان — قاب نقشه و کارت‌های ویژه */
+.grad-border { position: relative; }
+.grad-border::before {
+  content: "";
+  position: absolute; inset: 0; border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from var(--gb-angle,0deg), #a83a54, #c99a5b, #8a76a0, #a83a54);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: gradBorderSpin 8s linear infinite;
+  pointer-events: none;
+}
+@property --gb-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+@keyframes gradBorderSpin { to { --gb-angle: 360deg; } }
+
+/* حلقهٔ نبض روی آواتار */
+.avatar-pulse { position: relative; animation: avatarBreath 4.5s ease-in-out infinite; }
+@keyframes avatarBreath {
+  0%,100% { box-shadow: 0 8px 22px rgba(168,58,84,.18); }
+  50%     { box-shadow: 0 10px 30px rgba(168,58,84,.34); }
+}
 
 /* خط زیر عنوان بخش */
 .title-rule {
@@ -58,3 +138,65 @@ body { font-family: "Vazirmatn", Tahoma, sans-serif; background: #fbf7f4; color:
 .fade-up-d1 { animation: fadeUp .7s .12s ease both; }
 .fade-up-d2 { animation: fadeUp .7s .24s ease both; }
 .fade-up-d3 { animation: fadeUp .7s .36s ease both; }
+
+/* ورود نرم بدون حرکت (برای عناصر صفحه‌بندی‌شده) */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.fade-in { animation: fadeIn .45s ease both; }
+
+/* ------------------------------------------------------------------ */
+/* Reveal — ظهور هنگام اسکرول (fade + حرکت بر اساس جهت)                */
+/* ------------------------------------------------------------------ */
+.reveal {
+  opacity: 0;
+  transition: opacity .7s cubic-bezier(.22,.61,.36,1), transform .7s cubic-bezier(.22,.61,.36,1);
+  will-change: opacity, transform;
+}
+.reveal-up    { transform: translateY(34px); }
+.reveal-down  { transform: translateY(-34px); }
+.reveal-right { transform: translateX(46px); }  /* RTL: از راست وارد شود */
+.reveal-left  { transform: translateX(-46px); } /* RTL: از چپ وارد شود */
+.reveal-zoom  { transform: scale(.92); }
+.reveal.visible { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .reveal.visible { transition: none; transform: none; opacity: 1; }
+  .float-chip, .aurora span, .decor-ring, .shimmer, .grad-border::before, .avatar-pulse { animation: none !important; }
+}
+
+/* ورود آبشاری کارت‌های گرید (هر کارت با تأخیر) */
+.stagger-grid > * {
+  animation: fadeUp .6s ease both;
+}
+.stagger-grid > *:nth-child(1) { animation-delay: .00s; }
+.stagger-grid > *:nth-child(2) { animation-delay: .07s; }
+.stagger-grid > *:nth-child(3) { animation-delay: .14s; }
+.stagger-grid > *:nth-child(4) { animation-delay: .21s; }
+.stagger-grid > *:nth-child(5) { animation-delay: .28s; }
+.stagger-grid > *:nth-child(6) { animation-delay: .35s; }
+
+/* نوار پیشرفت اسکرول بالای صفحه */
+.scroll-progress {
+  position: fixed; top: 0; right: 0; height: 3px; z-index: 2000;
+  background: linear-gradient(90deg,#c99a5b,#a83a54,#5c4a6e);
+  transition: width .12s linear;
+  border-radius: 0 0 0 99px;
+}
+
+/* لینک‌های منو — خط زیر در هاور */
+.nav-link { position: relative; }
+.nav-link::after {
+  content: "";
+  position: absolute;
+  bottom: 4px; right: 50%;
+  width: 0; height: 2.5px; border-radius: 99px;
+  background: linear-gradient(90deg,#a83a54,#c99a5b);
+  transform: translateX(50%);
+  transition: width .3s ease;
+}
+.nav-link:hover::after { width: calc(100% - 24px); }
+
+/* نقطهٔ ضربان‌دار وضعیت */
+@keyframes pulseDot {
+  0%,100% { box-shadow: 0 0 0 0 rgba(168,58,84,.45); }
+  60%     { box-shadow: 0 0 0 7px rgba(168,58,84,0); }
+}

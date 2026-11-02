@@ -1,4 +1,5 @@
 import { Box, Button, Container, Paper, Stack, Typography } from "@mui/material";
+import Reveal from "./Reveal";
 import SectionTitle from "./SectionTitle";
 import { texts } from "../content/texts";
 
@@ -22,14 +23,14 @@ export default function BookingSteps() {
               background: "repeating-linear-gradient(90deg,#e8c4ce 0 10px,transparent 10px 20px)",
             }}
           />
-          {texts.steps.map((s) => (
+          {texts.steps.map((s, i) => (
+            <Reveal key={s.n} delay={i * 130} variant="up" sx={{ flex: 1, position: "relative", zIndex: 1 }}>
             <Paper
-              key={s.n}
               elevation={0}
-              className="hover-lift"
+              className="hover-lift card-shine"
               sx={{
                 flex: 1, p: { xs: 2.4, md: 3 }, borderRadius: "18px",
-                border: "1px solid #f3e2e7", textAlign: "center", position: "relative", zIndex: 1,
+                border: "1px solid #f3e2e7", textAlign: "center", position: "relative", height: "100%",
               }}
             >
               <Box
@@ -39,6 +40,8 @@ export default function BookingSteps() {
                   background: "linear-gradient(135deg,#b34460,#8a2f47)",
                   color: "#fff", fontSize: 30, fontWeight: 800,
                   boxShadow: "0 10px 24px rgba(168,58,84,.30)",
+                  transition: "transform .3s ease",
+                  "&:hover": { transform: "scale(1.08) rotate(4deg)" },
                 }}
               >
                 {s.n}
@@ -48,11 +51,12 @@ export default function BookingSteps() {
                 {s.desc}
               </Typography>
             </Paper>
+            </Reveal>
           ))}
         </Stack>
 
         <Stack direction="row" justifyContent="center" mt={5}>
-          <Button href="/booking" variant="contained" size="large" sx={{ px: 4, py: 1.5, fontSize: 15.5 }}>
+          <Button href="/booking" variant="contained" size="large" className="shine-btn" sx={{ px: 4, py: 1.5, fontSize: 15.5 }}>
             شروع رزرو نوبت
           </Button>
         </Stack>

@@ -1,4 +1,5 @@
 import { Box, Card, CardContent, Chip, Container, Typography } from "@mui/material";
+import Reveal from "./Reveal";
 import SectionTitle from "./SectionTitle";
 import { texts } from "../content/texts";
 
@@ -15,9 +16,9 @@ export default function Academy() {
           }}
         >
           {texts.academy.map((a, i) => (
+            <Reveal key={a.title} delay={i * 120} variant="up" sx={{ height: "100%" }}>
             <Card
-              key={a.title}
-              className="hover-lift"
+              className="hover-lift card-shine"
               elevation={0}
               sx={{
                 height: "100%",
@@ -44,6 +45,7 @@ export default function Academy() {
                 </Typography>
               </CardContent>
             </Card>
+            </Reveal>
           ))}
         </Box>
       </Container>

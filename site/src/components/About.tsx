@@ -2,6 +2,7 @@ import { Box, Container, Paper, Stack, Typography } from "@mui/material";
 import { useState } from "react";
 import { SUGGESTED } from "../content/assets";
 import { texts } from "../content/texts";
+import Reveal from "./Reveal";
 import SectionTitle from "./SectionTitle";
 
 export default function About() {
@@ -11,6 +12,7 @@ export default function About() {
   return (
     <Container id="about" sx={{ py: 9 }}>
       <SectionTitle label="ما که هستیم" title={texts.aboutTitle} />
+      <Reveal variant="up">
       <Stack direction={{ xs: "column", md: "row" }} spacing={4} alignItems="center">
         {img && imgOk && (
           <Box
@@ -37,6 +39,7 @@ export default function About() {
           </Stack>
         </Stack>
       </Stack>
+      </Reveal>
     </Container>
   );
 }

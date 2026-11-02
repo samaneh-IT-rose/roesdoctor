@@ -6,9 +6,12 @@ const HERO_IMG = "/assets/img-12.png"; // بنر اصلی — از دارایی�
 export default function Hero() {
   return (
     <Box sx={{ position: "relative", overflow: "hidden", pt: { xs: 5, md: 8 }, pb: { xs: 7, md: 10 } }}>
-      {/* تزئینات پس‌زمینه */}
-      <Box className="decor-blob" sx={{ width: 420, height: 420, background: "rgba(208,107,128,.20)", top: -140, right: -120 }} />
-      <Box className="decor-blob" sx={{ width: 360, height: 360, background: "rgba(138,118,160,.16)", bottom: -160, left: -100 }} />
+      {/* اورورای متحرک + تزئینات */}
+      <Box className="aurora" aria-hidden>
+        <span style={{ width: 460, height: 460, background: "rgba(208,107,128,.30)", top: -160, right: -140 }} />
+        <span style={{ width: 400, height: 400, background: "rgba(138,118,160,.24)", bottom: -180, left: -120 }} />
+        <span style={{ width: 300, height: 300, background: "rgba(201,154,91,.18)", top: "38%", left: "34%" }} />
+      </Box>
       <Box className="decor-ring" sx={{ width: 220, height: 220, top: 40, left: "38%", display: { xs: "none", md: "block" } }} />
 
       <Container maxWidth="lg">
@@ -23,19 +26,19 @@ export default function Hero() {
                 px: 2, py: 0.7, mb: 3, boxShadow: "0 6px 18px rgba(168,58,84,.08)",
               }}
             >
-              <Box sx={{ width: 8, height: 8, borderRadius: "50%", background: "#a83a54" }} />
+              <Box sx={{ width: 8, height: 8, borderRadius: "50%", background: "#a83a54", animation: "pulseDot 1.8s ease-in-out infinite" }} />
               <Typography variant="caption" fontWeight={700} color="primary.main">
                 مرکز تخصصی سلامت روان — حضوری و آنلاین
               </Typography>
             </Box>
 
             <Typography
-              className="fade-up-d1"
+              className="fade-up-d1 shimmer"
               variant="h2"
               fontWeight={800}
               sx={{ fontSize: { xs: 34, sm: 44, md: 52 }, lineHeight: 1.4, mb: 2.5 }}
             >
-              آرامش، از یک <span className="grad-text">گفت‌وگوی امن</span> آغاز می‌شود
+              آرامش، از یک گفت‌وگوی امن آغاز می‌شود
             </Typography>
 
             <Typography className="fade-up-d2" variant="h6" color="text.secondary" sx={{ fontWeight: 400, lineHeight: 2, maxWidth: 560, mb: 4 }}>
@@ -44,13 +47,13 @@ export default function Hero() {
             </Typography>
 
             <Stack className="fade-up-d3" direction={{ xs: "column", sm: "row" }} spacing={1.6}>
-              <Button href="/booking" variant="contained" size="large" sx={{ px: 4, py: 1.6, fontSize: 16 }}>
+              <Button href="/booking" variant="contained" size="large" className="shine-btn" sx={{ px: 4, py: 1.6, fontSize: 16 }}>
                 رزرو نوبت آنلاین
               </Button>
               <Button
                 href="#services"
                 size="large"
-                sx={{ px: 4, py: 1.6, fontSize: 16, color: "primary.main", border: "1.5px solid #ecc8d1", bgcolor: "#fff", "&:hover": { bgcolor: "#faf0f3", borderColor: "primary.main" } }}
+                sx={{ px: 4, py: 1.6, fontSize: 16, color: "primary.main", border: "1.5px solid #ecc8d1", bgcolor: "#fff", "&:hover": { bgcolor: "#faf0f3", borderColor: "primary.main", transform: "translateY(-2px)" }, transition: "all .25s ease" }}
               >
                 آشنایی با خدمات
               </Button>
@@ -75,6 +78,8 @@ export default function Hero() {
                 boxShadow: "0 30px 70px rgba(124,39,64,.18)",
                 border: "6px solid #fff",
                 bgcolor: "#fff",
+                transition: "transform .45s ease",
+                "&:hover": { transform: "scale(1.015) rotate(-.4deg)" },
               }}
             >
               <Box

@@ -1,4 +1,5 @@
 import { Box, Container, Paper, Stack, Typography } from "@mui/material";
+import Reveal from "./Reveal";
 import SectionTitle from "./SectionTitle";
 import { texts } from "../content/texts";
 
@@ -15,10 +16,10 @@ export default function Features() {
           }}
         >
           {texts.features.map((f, i) => (
+            <Reveal key={f.title} delay={(i % 4) * 90} variant="up" sx={{ height: "100%" }}>
             <Paper
-              key={f.title}
               elevation={0}
-              className="hover-lift"
+              className="hover-lift card-shine"
               sx={{
                 p: { xs: 2.4, md: 3 },
                 borderRadius: "18px",
@@ -46,6 +47,7 @@ export default function Features() {
                 {f.desc}
               </Typography>
             </Paper>
+            </Reveal>
           ))}
         </Box>
       </Container>

@@ -2,9 +2,25 @@ import {
   AppBar, Box, Button, Container, Drawer, IconButton, List, ListItem,
   Stack, Toolbar, Typography, useScrollTrigger,
 } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SUGGESTED } from "../content/assets";
 import { texts } from "../content/texts";
+
+/** نوار پیشرفت اسکرول بالای صفحه */
+function ScrollProgress() {
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const onScroll = () => {
+      const h = document.documentElement;
+      const max = h.scrollHeight - h.clientHeight;
+      setW(max > 0 ? (h.scrollTop / max) * 100 : 0);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return <Box className="scroll-progress" sx={{ width: `${w}%` }} aria-hidden />;
+}
 
 export default function Header() {
   const [open, setOpen] = useState(false);
@@ -12,6 +28,7 @@ export default function Header() {
 
   return (
     <>
+      <ScrollProgress />
       {/* نوار اطلاع‌رسانی بالای سایت */}
       <Box sx={{ background: "linear-gradient(90deg,#7c2740,#a83a54 55%,#5c4a6e)", color: "#fff", py: 0.7, textAlign: "center" }}>
         <Typography variant="caption" sx={{ fontWeight: 600, letterSpacing: 0.2 }}>
@@ -24,9 +41,10 @@ export default function Header() {
         elevation={0}
         sx={{
           bgcolor: raised ? "rgba(255,255,255,0.97)" : "rgba(255,255,255,0.88)",
-          backdropFilter: "blur(10px)",
+          backdropFilter: "blur(12px)",
           borderBottom: "1px solid #f3dce2",
-          transition: "background .25s ease",
+          boxShadow: raised ? "0 10px 30px rgba(124,39,64,.08)" : "none",
+          transition: "background .25s ease, box-shadow .25s ease",
         }}
       >
         <Container maxWidth="lg">
@@ -48,12 +66,13 @@ export default function Header() {
               <Button
                 key={n.id}
                 href={`#${n.id}`}
+                className="nav-link"
                 sx={{
                   color: "text.primary",
                   display: { xs: "none", lg: "inline-flex" },
                   fontWeight: 600,
                   fontSize: 14.5,
-                  "&:hover": { color: "primary.main", bgcolor: "rgba(168,58,84,.06)" },
+                  "&:hover": { color: "primary.main", bgcolor: "transparent" },
                 }}
               >
                 {n.label}
@@ -62,12 +81,13 @@ export default function Header() {
 
             <Button
               href="/clinics"
+              className="nav-link"
               sx={{
                 color: "text.primary",
                 display: { xs: "none", lg: "inline-flex" },
                 fontWeight: 600,
                 fontSize: 14.5,
-                "&:hover": { color: "primary.main", bgcolor: "rgba(168,58,84,.06)" },
+                "&:hover": { color: "primary.main", bgcolor: "transparent" },
               }}
             >
               کلینیک‌ها
@@ -82,12 +102,13 @@ export default function Header() {
                 borderColor: "#d9c9e2",
                 color: "secondary.main",
                 fontWeight: 700,
-                "&:hover": { borderColor: "secondary.main", bgcolor: "rgba(92,74,110,.06)" },
+                "&:hover": { borderColor: "secondary.main", bgcolor: "rgba(92,74,110,.06)", transform: "translateY(-1px)" },
+                transition: "all .2s ease",
               }}
             >
               ورود به سامانه
             </Button>
-            <Button href="/booking" variant="contained" size="small" sx={{ display: { xs: "none", sm: "inline-flex" }, px: 2.2 }}>
+            <Button href="/booking" variant="contained" size="small" className="shine-btn" sx={{ display: { xs: "none", sm: "inline-flex" }, px: 2.2 }}>
               رزرو نوبت
             </Button>
 
