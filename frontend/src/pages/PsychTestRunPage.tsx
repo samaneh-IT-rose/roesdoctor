@@ -9,7 +9,7 @@ import {
 } from "@mui/material";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { errDetail } from "../api/client";
 import {
   AttemptResult, TestDemographics, fetchPublicPaper, submitPsychAttempt,
@@ -25,8 +25,15 @@ import ListAltRoundedIcon from "@mui/icons-material/ListAltRounded";
 export default function PsychTestRunPage() {
   const { slug = "" } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  // فاز ۷۵ — برندینگ سازمانی: اگر از کارتابل برنامهٔ سازمانی آمده باشیم
+  // (?program=ID) عنوان نمایشی و لوگو/پیام سازمان برگردانده می‌شود.
+  const [searchParams] = useSearchParams();
+  const programId = searchParams.get("program") ?? "";
 
-  const paper = useQuery({ queryKey: ["psych-paper", slug], queryFn: () => fetchPublicPaper(slug) });
+  const paper = useQuery({
+    queryKey: ["psych-paper", slug, programId],
+    queryFn: () => fetchPublicPaper(slug, programId || undefined),
+  });
 
   const [started, setStarted] = useState(false);
   const [demographicsStep, setDemographicsStep] = useState(false);
@@ -37,6 +44,9 @@ export default function PsychTestRunPage() {
   const [result, setResult] = useState<AttemptResult | null>(null);
 
   const questions = paper.data?.questions ?? [];
+  // عنوان مؤثر: عنوان نمایشی برنامهٔ سازمانی (در صورت وجود) وگرنه عنوان آزمون
+  const effTitle = paper.data?.effective_title || paper.data?.test.title || "";
+  const branding = paper.data?.branding ?? null;
   // بیشینه نمره هر سؤال = اندیس آخرین گزینه (گزینه‌ها در همه ابزارهای درج‌شده صعودی‌اند)
   const questionMax = (qi: number) => (questions[qi]?.options.length ? questions[qi].options.length - 1 : 0);
   const totalMax = useMemo(
@@ -51,6 +61,26 @@ export default function PsychTestRunPage() {
 
   const answeredCount = Object.keys(answers).length;
   const progress = questions.length ? (answeredCount / questions.length) * 100 : 0;
+  // فاز ۷۵ — رفع «گیر کردن روی سؤال آخر»: اگر سؤالی بی‌پاسخ مانده باشد
+  // دکمهٔ پایانی به اولین سؤال بی‌پاسخ می‌پرد و راهنما نشان می‌دهد.
+  const firstUnanswered = useMemo(
+    () => questions.findIndex((_, i) => answers[i] === undefined),
+    [questions, answers],
+  );
+  const [jumpHint, setJumpHint] = useState<string | null>(null);
+
+  const tryFinish = () => {
+    if (firstUnanswered >= 0) {
+      setCurrent(firstUnanswered);
+      setJumpHint(
+        `پاسخ سؤال ${(firstUnanswered + 1).toLocaleString("fa-IR")} هنوز ثبت نشده است — به همان سؤال رفتید`,
+      );
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    setJumpHint(null);
+    submitMut.mutate();
+  };
 
   const pick = (optIdx: number) => {
     setAnswers((p) => ({ ...p, [current]: optIdx }));
@@ -76,10 +106,10 @@ export default function PsychTestRunPage() {
           </Paper>
 
           {report ? (
-            <PsychResultReport payload={report} attempt={a} testTitle={paper.data?.test.title} />
+            <PsychResultReport payload={report} attempt={a} testTitle={effTitle} />
           ) : (
             <Paper sx={{ p: 3, textAlign: "center" }}>
-              <Typography variant="h6" fontWeight={800} mt={1}>{paper.data?.test.title}</Typography>
+              <Typography variant="h6" fontWeight={800} mt={1}>{effTitle}</Typography>
               <Stack alignItems="center" mt={2}>
                 <ScoreGauge score={a.score} max={totalMax} label={a.interpretation_label} />
               </Stack>
@@ -147,7 +177,7 @@ export default function PsychTestRunPage() {
             مشخصات اولیه
           </Typography>
           <Typography variant="body2" color="text.secondary" textAlign="center" mb={3}>
-            {paper.data?.test.title} — این اطلاعات صرفاً برای پرونده آزمون ثبت می‌شود
+            {effTitle} — این اطلاعات صرفاً برای پرونده آزمون ثبت می‌شود
           </Typography>
           <Stack spacing={2.5}>
             <FormControl fullWidth>
@@ -210,9 +240,25 @@ export default function PsychTestRunPage() {
               بازگشت به مرکز آزمون
             </Button>
             <Paper sx={{ p: 3 }}>
-              <Typography variant="h5" fontWeight={800}>{paper.data.test.title}</Typography>
+              {/* فاز ۷۵ — برندینگ سازمانی صفحه ورودی */}
+              {branding?.brand_logo_url && (
+                <Box
+                  component="img"
+                  src={branding.brand_logo_url}
+                  alt={branding.brand_name || "لوگو"}
+                  sx={{ display: "block", mx: "auto", mb: 2, maxWidth: 220, maxHeight: 110, objectFit: "contain" }}
+                />
+              )}
+              <Typography variant="h5" fontWeight={800} textAlign="center">
+                {branding?.entry_title || effTitle}
+              </Typography>
+              {branding?.brand_name && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", textAlign: "center", mt: 0.5 }}>
+                  {branding.brand_name}
+                </Typography>
+              )}
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, lineHeight: 2 }}>
-                {paper.data.test.description}
+                {branding?.entry_note || paper.data.test.description}
               </Typography>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={2}>
                 {paper.data.test.code && (
@@ -249,7 +295,7 @@ export default function PsychTestRunPage() {
       <Stack spacing={2}>
         <Stack direction="row" alignItems="center" spacing={1.5} flexWrap="wrap" useFlexGap>
           <Typography variant="subtitle1" fontWeight={800} flexGrow={1}>
-            {paper.data?.test.title}
+            {effTitle}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             سؤال {(current + 1).toLocaleString("fa-IR")} از {questions.length.toLocaleString("fa-IR")}
@@ -333,6 +379,17 @@ export default function PsychTestRunPage() {
           </Paper>
         )}
 
+        {/* فاز ۷۵ — راهنمای سؤال بی‌پاسخ */}
+        {jumpHint && current === firstUnanswered && (
+          <Alert severity="warning" onClose={() => setJumpHint(null)}>{jumpHint}</Alert>
+        )}
+        {current === questions.length - 1 && firstUnanswered >= 0 && !jumpHint && (
+          <Alert severity="info">
+            {(questions.length - answeredCount).toLocaleString("fa-IR")} سؤال بی‌پاسخ مانده است؛ برای ثبت نهایی،
+            همهٔ سؤال‌ها باید پاسخ داده شوند. دکمهٔ پایین شما را به اولین سؤال بی‌پاسخ می‌برد.
+          </Alert>
+        )}
+
         <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1} useFlexGap>
           <Button startIcon={<ArrowForwardRoundedIcon />} disabled={current === 0}
             onClick={() => setCurrent((c) => c - 1)}>
@@ -345,11 +402,14 @@ export default function PsychTestRunPage() {
                 سؤال بعدی
               </Button>
             ) : (
-              <Button variant="contained" color="success"
-                disabled={answeredCount < questions.length || submitMut.isPending}
-                onClick={() => submitMut.mutate()}>
-                {answeredCount < questions.length
-                  ? `پاسخ‌دهی: ${answeredCount.toLocaleString("fa-IR")}/${questions.length.toLocaleString("fa-IR")}`
+              <Button
+                variant="contained"
+                color={firstUnanswered >= 0 ? "primary" : "success"}
+                disabled={submitMut.isPending}
+                onClick={tryFinish}
+              >
+                {firstUnanswered >= 0
+                  ? `تکمیل پاسخ‌ها (${answeredCount.toLocaleString("fa-IR")}/${questions.length.toLocaleString("fa-IR")})`
                   : submitMut.isPending ? "در حال ثبت…" : "ثبت و مشاهده نتیجه"}
               </Button>
             )}

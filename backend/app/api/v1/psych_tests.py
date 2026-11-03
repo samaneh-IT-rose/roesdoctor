@@ -24,7 +24,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db, require_roles
+from app.api.deps import get_current_user, get_current_user_optional, get_db, require_roles
+from app.models.org_contract import Organization
+from app.models.org_program import OrgProgram, OrgProgramMember, OrgProgramTest
 from app.models.psych_test import (
     PsychAttempt,
     PsychInterpretation,
@@ -499,8 +501,19 @@ def public_psych_image(file_path: str) -> FileResponse:
 
 
 @router.get("/public/psych-tests/{slug}/paper")
-def public_paper(slug: str, db: Session = Depends(get_db)) -> dict:
-    """پرسش‌نامه ابزار منتشرشده — امتیاز گزینه‌ها هرگز به کلاینت نمی‌رود."""
+def public_paper(
+    slug: str,
+    program_id: uuid.UUID | None = Query(default=None),
+    db: Session = Depends(get_db),
+    actor: User | None = Depends(get_current_user_optional),
+) -> dict:
+    """پرسش‌نامه ابزار منتشرشده — امتیاز گزینه‌ها هرگز به کلاینت نمی‌رود.
+
+    فاز ۷۵ — اگر ``program_id`` داده شود و کاربر جاری به آن برنامهٔ سازمانی
+    دسترسی داشته باشد (عضو برنامه / هم‌سازمان / ستاد)، ``effective_title``
+    (عنوان نمایشی برنامه) و ``branding`` سازمان (لوگو/عنوان و پیام صفحه
+    ورودی) هم برگردانده می‌شود؛ در غیر این صورت هرگز درج نمی‌شود.
+    """
     t = db.scalars(
         select(PsychTest).where(PsychTest.slug == slug, PsychTest.status == PsychStatus.PUBLISHED)
     ).first()
@@ -509,6 +522,49 @@ def public_paper(slug: str, db: Session = Depends(get_db)) -> dict:
     questions = db.scalars(
         select(PsychQuestion).where(PsychQuestion.test_id == t.id).order_by(PsychQuestion.sort_order)
     ).all()
+
+    effective_title: str | None = None
+    branding: dict | None = None
+    if program_id is not None and actor is not None:
+        pt = db.scalars(
+            select(OrgProgramTest).where(
+                OrgProgramTest.program_id == program_id,
+                OrgProgramTest.test_id == t.id,
+            )
+        ).first()
+        if pt is not None:
+            program = db.get(OrgProgram, pt.program_id)
+            if program is not None:
+                roles = {r.code for r in actor.roles}
+                staff = bool(roles & {"SYSTEM_ADMIN", "ORG_MANAGER", "TECHNICAL_SUPERVISOR", "RECEPTION", "COUNSELOR"})
+                same_org = actor.organization_id == program.organization_id
+                is_member = (
+                    db.scalar(
+                        select(func.count())
+                        .select_from(OrgProgramMember)
+                        .where(
+                            OrgProgramMember.program_id == program.id,
+                            OrgProgramMember.user_id == actor.id,
+                        )
+                    )
+                    or 0
+                ) > 0
+                if staff or same_org or is_member:
+                    effective_title = pt.display_title or t.title
+                    org = db.get(Organization, program.organization_id)
+                    if org is not None:
+                        branding = {
+                            "org_id": str(org.id),
+                            "brand_name": org.brand_name,
+                            "brand_logo_url": (
+                                f"/api/v1/public/org-logos/{org.brand_logo_path}"
+                                if org.brand_logo_path
+                                else None
+                            ),
+                            "entry_title": org.entry_title,
+                            "entry_note": org.entry_note,
+                        }
+
     return {
         "test": {
             "id": str(t.id),
@@ -520,6 +576,8 @@ def public_paper(slug: str, db: Session = Depends(get_db)) -> dict:
             "estimated_minutes": t.estimated_minutes,
             "accent_color": t.accent_color,
         },
+        "effective_title": effective_title,
+        "branding": branding,
         "questions": [
             {
                 "id": str(q.id),

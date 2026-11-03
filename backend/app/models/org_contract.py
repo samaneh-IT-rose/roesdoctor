@@ -23,6 +23,7 @@ from sqlalchemy import (
     Index,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -46,6 +47,11 @@ class Organization(Base):
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # فاز ۷۵ — برندینگ آزمون سازمانی (صفحه ورودی/اجرای آزمون کارکنان)
+    brand_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    brand_logo_path: Mapped[str | None] = mapped_column(String(300), nullable=True)  # زیر uploads/org_logos
+    entry_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    entry_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

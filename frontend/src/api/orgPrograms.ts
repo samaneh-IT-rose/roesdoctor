@@ -26,6 +26,10 @@ export interface OrgProgramTestItem {
   test_id: string;
   slug: string;
   title: string;
+  /** فاز ۷۵ — عنوان نمایشی برای شرکت‌کنندگان برنامه */
+  display_title: string | null;
+  /** فاز ۷۵ — عنوان مؤثر (display_title یا title) */
+  effective_title?: string | null;
   code: string | null;
   description: string | null;
   topic_name: string | null;
@@ -117,8 +121,14 @@ export async function deleteOrgProgram(id: string): Promise<void> {
   await apiClient.delete(`/org-programs/${id}`);
 }
 
-export async function setOrgProgramTests(id: string, testIds: string[]): Promise<void> {
-  await apiClient.put(`/org-programs/${id}/tests`, { test_ids: testIds });
+export async function setOrgProgramTests(
+  id: string,
+  testIds: string[],
+  items?: { test_id: string; display_title: string | null }[],
+): Promise<void> {
+  // فاز ۷۵ — در حالت items عنوان نمایشی هر آزمون هم ذخیره می‌شود
+  await apiClient.put(`/org-programs/${id}/tests`,
+    items ? { items } : { test_ids: testIds });
 }
 
 export async function addOrgProgramMember(

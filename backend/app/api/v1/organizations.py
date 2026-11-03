@@ -16,9 +16,11 @@
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
@@ -69,6 +71,10 @@ class OrganizationCreate(BaseModel):
     address: str | None = Field(default=None, max_length=500)
     note: str | None = Field(default=None, max_length=500)
     is_active: bool = True
+    # فاز ۷۵ — برندینگ آزمون سازمانی
+    brand_name: str | None = Field(default=None, max_length=120)
+    entry_title: str | None = Field(default=None, max_length=200)
+    entry_note: str | None = Field(default=None, max_length=2000)
 
 
 class OrganizationUpdate(BaseModel):
@@ -79,6 +85,10 @@ class OrganizationUpdate(BaseModel):
     address: str | None = Field(default=None, max_length=500)
     note: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
+    # فاز ۷۵ — برندینگ آزمون سازمانی (None = بدون تغییر؛ "" = پاک‌کردن)
+    brand_name: str | None = Field(default=None, max_length=120)
+    entry_title: str | None = Field(default=None, max_length=200)
+    entry_note: str | None = Field(default=None, max_length=2000)
 
 
 class ContractCreate(BaseModel):
@@ -182,6 +192,13 @@ def _org_out(db: Session, o: Organization) -> dict:
         "address": o.address,
         "note": o.note,
         "is_active": o.is_active,
+        # فاز ۷۵ — برندینگ آزمون سازمانی
+        "brand_name": o.brand_name,
+        "brand_logo_url": (
+            f"/api/v1/public/org-logos/{o.brand_logo_path}" if o.brand_logo_path else None
+        ),
+        "entry_title": o.entry_title,
+        "entry_note": o.entry_note,
         "contract_count": len(contracts),
         "active_contract": (
             {
@@ -279,6 +296,9 @@ def create_organization(
         address=payload.address,
         note=payload.note,
         is_active=payload.is_active,
+        brand_name=(payload.brand_name or "").strip() or None,
+        entry_title=(payload.entry_title or "").strip() or None,
+        entry_note=(payload.entry_note or "").strip() or None,
         created_by=actor.id,
     )
     db.add(org)
@@ -292,15 +312,22 @@ def update_organization(
     org_id: uuid.UUID,
     payload: OrganizationUpdate,
     db: Session = Depends(get_db),
-    _actor: User = Depends(require_roles(*MANAGE_ROLES)),
+    actor: User = Depends(require_roles(*MANAGE_ROLES)),
 ) -> dict:
     org = db.get(Organization, org_id)
     if org is None:
         raise HTTPException(status_code=404, detail="سازمان یافت نشد")
+    # فاز ۷۵ — ایزولاسیون: مدیر منتسب‌شده فقط سازمان خودش را ویرایش می‌کند
+    _ensure_org_scope(actor, org_id)
     for field in ("name", "phone", "email", "address", "note"):
         value = getattr(payload, field)
         if value is not None:
             setattr(org, field, value.strip() if isinstance(value, str) else value)
+    # فاز ۷۵ — برندینگ: None = بدون تغییر؛ "" = پاک‌کردن
+    for field in ("brand_name", "entry_title", "entry_note"):
+        value = getattr(payload, field, None)
+        if value is not None:
+            setattr(org, field, value.strip() or None)
     if payload.national_id is not None:
         nid = payload.national_id.strip()
         if nid:
@@ -317,6 +344,100 @@ def update_organization(
     db.commit()
     db.refresh(org)
     return _org_out(db, org)
+
+
+# ---------------------------------------------------------------- فاز ۷۵ — برندینگ: لوگوی سازمان
+_LOGO_MIME_EXT = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+}
+_LOGO_MAX_BYTES = 2 * 1024 * 1024  # ۲ مگابایت
+
+
+@router.post("/organizations/{org_id}/logo", status_code=201)
+async def upload_org_logo(
+    org_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_roles(*MANAGE_ROLES)),
+) -> dict:
+    """آپلود لوگوی سازمان برای صفحه ورودی/اجرای آزمون‌های سازمانی.
+
+    تصویر در ``uploads/org_logos`` ذخیره و از مسیر عمومی
+    ``/api/v1/public/org-logos/...`` سرو می‌شود (تگ <img> هدر Authorization
+    نمی‌فرستد؛ محتوای لوگو غیرحساس است).
+    """
+    org = db.get(Organization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="سازمان یافت نشد")
+    _ensure_org_scope(actor, org_id)
+    ext = _LOGO_MIME_EXT.get((file.content_type or "").lower())
+    if ext is None:
+        raise HTTPException(status_code=422, detail="فرمت لوگو باید PNG یا JPG یا WEBP باشد")
+    data = await file.read()
+    if len(data) == 0:
+        raise HTTPException(status_code=422, detail="فایل خالی است")
+    if len(data) > _LOGO_MAX_BYTES:
+        raise HTTPException(status_code=422, detail="حجم لوگو حداکثر ۲ مگابایت است")
+
+    base = Path("uploads/org_logos")
+    base.mkdir(parents=True, exist_ok=True)
+    # حذف لوگوی قبلی
+    if org.brand_logo_path:
+        try:
+            old = (base / org.brand_logo_path).resolve()
+            if old.is_file() and base.resolve() in old.parents:
+                old.unlink()
+        except OSError:
+            pass
+    fname = f"{org.id.hex[:12]}_{int(datetime.now(timezone.utc).timestamp())}{ext}"
+    (base / fname).write_bytes(data)
+    org.brand_logo_path = fname
+    db.commit()
+    db.refresh(org)
+    return _org_out(db, org)
+
+
+@router.delete("/organizations/{org_id}/logo")
+def delete_org_logo(
+    org_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_roles(*MANAGE_ROLES)),
+) -> dict:
+    org = db.get(Organization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="سازمان یافت نشد")
+    _ensure_org_scope(actor, org_id)
+    if org.brand_logo_path:
+        base = Path("uploads/org_logos")
+        try:
+            old = (base / org.brand_logo_path).resolve()
+            if old.is_file() and base.resolve() in old.parents:
+                old.unlink()
+        except OSError:
+            pass
+        org.brand_logo_path = None
+        db.commit()
+    return {"ok": True}
+
+
+@router.get("/public/org-logos/{file_path:path}")
+def public_org_logo(file_path: str) -> FileResponse:
+    """سرو عمومی لوگوی سازمان‌ها (فقط-خواندنی، ضد Traversal) — مثل psych-images."""
+    base = Path("uploads/org_logos").resolve()
+    target = (base / file_path).resolve()
+    if base not in target.parents and target != base:
+        raise HTTPException(status_code=404, detail="تصویر یافت نشد")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="تصویر یافت نشد")
+    mime = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+    }.get(target.suffix.lower(), "application/octet-stream")
+    return FileResponse(target, media_type=mime)
 
 
 # ---------------------------------------------------------------- contracts

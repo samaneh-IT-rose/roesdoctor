@@ -5,7 +5,7 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography,
 } from "@mui/material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import { errDetail } from "../api/client";
 import JalaliDateField from "../components/JalaliDateField";
 import { formatJalali } from "../utils/jalali";
@@ -13,8 +13,8 @@ import { fetchAllServices } from "../api/branches";
 import { fetchPsychTests, type PsychTest } from "../api/psych";
 import {
   Contract, Organization, ReceivablesReport, createContract, createOrganization,
-  createStatement, fetchContracts, fetchOrganizations, fetchReceivables, settleStatement,
-  updateContract, updateOrganization,
+  createStatement, deleteOrgLogo, fetchContracts, fetchOrganizations, fetchReceivables,
+  settleStatement, updateContract, updateOrganization, uploadOrgLogo,
 } from "../api/organizations";
 
 const fa = (n: number | null | undefined) =>
@@ -34,6 +34,8 @@ export default function OrganizationsPage() {
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
   const [newContractFor, setNewContractFor] = useState<Organization | null>(null);
   const [receivablesOrg, setReceivablesOrg] = useState<Organization | null>(null);
+  // فاز ۷۵ — برندینگ آزمون سازمانی (عنوان/پیام صفحه ورودی + لوگو)
+  const [brandingOrg, setBrandingOrg] = useState<Organization | null>(null);
 
   const orgs = useQuery({ queryKey: ["organizations"], queryFn: fetchOrganizations });
   const contracts = useQuery({
@@ -167,6 +169,7 @@ export default function OrganizationsPage() {
                 </TableCell>
                 <TableCell align="left" onClick={(e) => e.stopPropagation()}>
                   <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                    <Button size="small" onClick={() => setBrandingOrg(o)}>برندینگ آزمون</Button>
                     <Button size="small" onClick={() => setNewContractFor(o)}>قرارداد جدید</Button>
                     <Button size="small" onClick={() => setReceivablesOrg(o)}>مطالبات</Button>
                     <Button size="small" onClick={() => toggleOrgMut.mutate({ id: o.id, is_active: !o.is_active })}>
@@ -225,6 +228,13 @@ export default function OrganizationsPage() {
         loading={createOrgMut.isPending}
         onClose={() => setCreateOrgOpen(false)}
         onSubmit={(payload) => createOrgMut.mutate(payload)}
+      />
+      {/* فاز ۷۵ — برندینگ آزمون سازمانی */}
+      <OrgBrandingDialog
+        org={brandingOrg}
+        onClose={() => setBrandingOrg(null)}
+        onSaved={(m) => { setOkMsg(m); setBrandingOrg(null); }}
+        onError={(e) => setError(e)}
       />
       <CreateContractDialog
         org={newContractFor}
@@ -568,6 +578,137 @@ function ReceivablesDialog({ orgId, report, orgName, loading, onClose, onChanged
         )}
       </DialogContent>
       <DialogActions><Button onClick={onClose}>بستن</Button></DialogActions>
+    </Dialog>
+  );
+}
+
+/* ================= فاز ۷۵ — برندینگ آزمون سازمانی ================= */
+function OrgBrandingDialog({
+  org, onClose, onSaved, onError,
+}: {
+  org: Organization | null;
+  onClose: () => void;
+  onSaved: (msg: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const qc = useQueryClient();
+  const [brandName, setBrandName] = useState("");
+  const [entryTitle, setEntryTitle] = useState("");
+  const [entryNote, setEntryNote] = useState("");
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // مقداردهی اولیه هنگام باز شدن دیالوگ برای هر سازمان
+  if (org && loadedFor !== org.id) {
+    setLoadedFor(org.id);
+    setBrandName(org.brand_name ?? "");
+    setEntryTitle(org.entry_title ?? "");
+    setEntryNote(org.entry_note ?? "");
+  }
+  if (!org && loadedFor !== null) {
+    setLoadedFor(null);
+  }
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      updateOrganization(org!.id, {
+        brand_name: brandName,
+        entry_title: entryTitle,
+        entry_note: entryNote,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["organizations"] });
+      onSaved("برندینگ آزمون سازمان ذخیره شد");
+    },
+    onError: (e) => onError(errDetail(e)),
+  });
+
+  const uploadMut = useMutation({
+    mutationFn: (file: File) => uploadOrgLogo(org!.id, file),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["organizations"] });
+      onSaved("لوگوی سازمان آپلود شد");
+    },
+    onError: (e) => onError(errDetail(e)),
+  });
+
+  const removeMut = useMutation({
+    mutationFn: () => deleteOrgLogo(org!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["organizations"] });
+      onSaved("لوگو حذف شد");
+    },
+    onError: (e) => onError(errDetail(e)),
+  });
+
+  const pickFile = (f: File | null | undefined) => {
+    if (!f) return;
+    if (f.size > 2 * 1024 * 1024) {
+      onError("حجم لوگو حداکثر ۲ مگابایت است");
+      return;
+    }
+    uploadMut.mutate(f);
+  };
+
+  return (
+    <Dialog open={!!org} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>برندینگ آزمون سازمانی — {org?.name ?? ""}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <Alert severity="info" variant="outlined" sx={{ py: 0.75 }}>
+            این موارد در <b>صفحه ورودی آزمون‌های سازمانی</b> (کارتابل برنامه ← شروع آزمون) برای
+            کارکنان سازمان نمایش داده می‌شود؛ عنوان نمایشی هر آزمون هم از کارتابل همان برنامه قابل تنظیم است.
+          </Alert>
+          <Stack direction="row" spacing={2} alignItems="center">
+            <Box
+              sx={{
+                width: 140, height: 76, borderRadius: 2, border: "1px dashed", borderColor: "divider",
+                display: "flex", alignItems: "center", justifyContent: "center", bgcolor: "action.hover", overflow: "hidden",
+              }}
+            >
+              {org?.brand_logo_url ? (
+                <Box component="img" src={org.brand_logo_url} alt="لوگو" sx={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+              ) : (
+                <Typography variant="caption" color="text.secondary">بدون لوگو</Typography>
+              )}
+            </Box>
+            <Stack spacing={0.75}>
+              <input
+                ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden
+                onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }}
+              />
+              <Button size="small" variant="outlined" disabled={uploadMut.isPending} onClick={() => fileRef.current?.click()}>
+                {uploadMut.isPending ? "در حال آپلود…" : "آپلود لوگو (PNG/JPG/WEBP تا ۲MB)"}
+              </Button>
+              {org?.brand_logo_url && (
+                <Button size="small" color="error" disabled={removeMut.isPending} onClick={() => removeMut.mutate()}>
+                  حذف لوگو
+                </Button>
+              )}
+            </Stack>
+          </Stack>
+          <TextField
+            size="small" label="نام برند سازمان (مثلاً پتروپارس)"
+            value={brandName} onChange={(e) => setBrandName(e.target.value)}
+          />
+          <TextField
+            size="small" label="عنوان صفحه ورودی آزمون (خالی = عنوان آزمون)"
+            value={entryTitle} onChange={(e) => setEntryTitle(e.target.value)}
+            placeholder="مثلاً: ارزیابی سلامت شغلی پتروپارس"
+          />
+          <TextField
+            size="small" label="پیام/توضیح صفحه ورودی (خالی = توضیح آزمون)"
+            multiline minRows={3} value={entryNote} onChange={(e) => setEntryNote(e.target.value)}
+            placeholder="مثلاً: این ارزیابی به همکاری شرکت نفت پارس و با رعایت کامل محرمانگی انجام می‌شود."
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>انصراف</Button>
+        <Button variant="contained" disabled={saveMut.isPending} onClick={() => saveMut.mutate()}>
+          ذخیره
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 }

@@ -93,6 +93,9 @@ class OrgProgramTest(Base):
     # آزمون الزامی یا اختیاری برای اعضا
     is_required: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # فاز ۷۵ — عنوان نمایشی آزمون برای شرکت‌کنندگان این برنامه
+    # (مثلاً «ارزیابی سلامت کارکنان» به‌جای نام بالینی ابزار)؛ NULL = عنوان اصلی
+    display_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

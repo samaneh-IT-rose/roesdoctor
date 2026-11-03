@@ -112,11 +112,23 @@ export interface PublicPsychTest {
   question_count: number;
 }
 
+export interface OrgTestBranding {
+  org_id: string;
+  brand_name: string | null;
+  brand_logo_url: string | null;
+  entry_title: string | null;
+  entry_note: string | null;
+}
+
 export interface PublicPaper {
   test: {
     id: string; slug: string; title: string; description: string | null;
     code?: string | null; age_range?: string | null; estimated_minutes?: number | null; accent_color?: string | null;
   };
+  /** فاز ۷۵ — عنوان نمایشی برنامهٔ سازمانی (در صورت درخواست با ?program=) */
+  effective_title?: string | null;
+  /** فاز ۷۵ — برندینگ سازمان (لوگو/عنوان/پیام صفحه ورودی) */
+  branding?: OrgTestBranding | null;
   questions: {
     id: string; prompt: string; subscale?: string | null; options: string[];
     image_url?: string | null; sort_order: number;
@@ -133,8 +145,11 @@ export async function fetchPublicPsychTests(): Promise<PublicPsychTest[]> {
   return r.data.items;
 }
 
-export async function fetchPublicPaper(slug: string): Promise<PublicPaper> {
-  const r = await apiClient.get<PublicPaper>(`/public/psych-tests/${slug}/paper`);
+export async function fetchPublicPaper(slug: string, programId?: string): Promise<PublicPaper> {
+  // فاز ۷۵ — با programId عنوان نمایشی برنامه و برندینگ سازمان هم برمی‌گردد
+  const r = await apiClient.get<PublicPaper>(`/public/psych-tests/${slug}/paper`, {
+    params: programId ? { program_id: programId } : undefined,
+  });
   return r.data;
 }
 

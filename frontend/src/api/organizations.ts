@@ -19,6 +19,11 @@ export interface Organization {
   address: string | null;
   note: string | null;
   is_active: boolean;
+  /** فاز ۷۵ — برندینگ آزمون سازمانی */
+  brand_name: string | null;
+  brand_logo_url: string | null;
+  entry_title: string | null;
+  entry_note: string | null;
   contract_count: number;
   active_contract: ActiveContractRef | null;
   /** فاز ۶۲: null = قرارداد فعال ندارد؛ [] = همه آزمون‌ها باز؛ لیست = فقط همین‌ها */
@@ -104,6 +109,18 @@ export async function createOrganization(payload: Record<string, unknown>): Prom
 export async function updateOrganization(id: string, payload: Record<string, unknown>): Promise<Organization> {
   const r = await apiClient.patch<Organization>(`/organizations/${id}`, payload);
   return r.data;
+}
+
+/** فاز ۷۵ — آپلود لوگوی سازمان (PNG/JPG/WEBP، حداکثر ۲MB) */
+export async function uploadOrgLogo(id: string, file: File): Promise<Organization> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const r = await apiClient.post<Organization>(`/organizations/${id}/logo`, fd);
+  return r.data;
+}
+
+export async function deleteOrgLogo(id: string): Promise<void> {
+  await apiClient.delete(`/organizations/${id}/logo`);
 }
 
 export async function fetchContracts(orgId: string): Promise<Contract[]> {

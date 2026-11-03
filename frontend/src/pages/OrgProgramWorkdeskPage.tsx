@@ -189,7 +189,15 @@ export default function OrgProgramWorkdeskPage() {
                             <Chip size="small" label="اختیاری" variant="outlined" />
                           )}
                         </Stack>
-                        <Typography variant="subtitle2" fontWeight={800}>{t.title}</Typography>
+                        <Typography variant="subtitle2" fontWeight={800}>
+                          {/* فاز ۷۵ — عنوان نمایشی برنامه در اولویت */}
+                          {t.effective_title ?? t.title}
+                        </Typography>
+                        {(t.effective_title ?? t.title) !== t.title && (
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                            نام اصلی: {t.title}
+                          </Typography>
+                        )}
                         {t.description && (
                           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5, minHeight: 32 }}>
                             {t.description?.slice(0, 110)}
@@ -202,7 +210,7 @@ export default function OrgProgramWorkdeskPage() {
                           <Box flex={1} />
                           <Button
                             size="small" variant="text" startIcon={<PlayCircleOutlineRoundedIcon />}
-                            onClick={() => navigate(`/psych-tests/${t.slug}/run`)}
+                            onClick={() => navigate(`/psych-tests/${t.slug}/run?program=${p.id}`)}
                           >
                             شروع آزمون
                           </Button>
@@ -473,6 +481,10 @@ function ManageTab({
   const qc = useQueryClient();
   const currentTestIds = useMemo(() => p.tests.map((t) => t.test_id), [p.tests]);
   const [selTests, setSelTests] = useState<string[] | null>(null);
+  // فاز ۷۵ — عنوان نمایشی هر آزمون برای شرکت‌کنندگان (خالی = عنوان اصلی)
+  const [titles, setTitles] = useState<Record<string, string>>(() =>
+    Object.fromEntries(p.tests.map((t) => [t.test_id, t.display_title ?? ""])),
+  );
   const [status, setStatus] = useState<string>(p.status);
   const [dueDate, setDueDate] = useState(p.due_date ?? "");
   const [guide, setGuide] = useState(p.guide_text ?? "");
@@ -485,6 +497,21 @@ function ManageTab({
   const saveTests = useMutation({
     mutationFn: () => setOrgProgramTests(p.id, selTests ?? currentTestIds),
     onSuccess: () => { onSnack("فهرست آزمون‌های برنامه ذخیره شد"); onChanged(); },
+    onError: (e) => onError(errDetail(e)),
+  });
+
+  // فاز ۷۵ — ذخیرهٔ عنوان‌های نمایشی (فقط ردیف‌های ذخیره‌شدهٔ برنامه)
+  const saveTitles = useMutation({
+    mutationFn: () =>
+      setOrgProgramTests(
+        p.id,
+        currentTestIds,
+        p.tests.map((t) => ({
+          test_id: t.test_id,
+          display_title: (titles[t.test_id] ?? "").trim() || null,
+        })),
+      ),
+    onSuccess: () => { onSnack("عنوان‌های نمایشی آزمون‌ها ذخیره شد"); onChanged(); },
     onError: (e) => onError(errDetail(e)),
   });
 
@@ -551,6 +578,37 @@ function ManageTab({
               ذخیرهٔ آزمون‌ها
             </Button>
           </Stack>
+
+          {/* فاز ۷۵ — عنوان نمایشی هر آزمون برای شرکت‌کنندگان */}
+          {p.tests.length > 0 && (
+            <Box sx={{ mt: 2, pt: 2, borderTop: "1px dashed", borderColor: "divider" }}>
+              <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 0.5 }}>
+                عنوان نمایشی آزمون‌ها برای شرکت‌کنندگان
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.5 }}>
+                مثلاً به‌جای «پرسشنامه سلامت عمومی (GHQ-28)»، عنوان دلخواه مثل «ارزیابی سلامت کارکنان» بگذارید؛
+                این عنوان در صفحه ورودی، حین اجرا و گزارش نتیجه برای اعضای همین برنامه نمایش داده می‌شود. خالی = عنوان اصلی.
+              </Typography>
+              <Stack spacing={1.5}>
+                {p.tests.map((t) => (
+                  <TextField
+                    key={t.test_id}
+                    size="small"
+                    fullWidth
+                    label={t.title}
+                    placeholder="عنوان نمایشی (اختیاری)"
+                    value={titles[t.test_id] ?? ""}
+                    onChange={(e) => setTitles((prev) => ({ ...prev, [t.test_id]: e.target.value }))}
+                  />
+                ))}
+              </Stack>
+              <Stack direction="row" justifyContent="flex-end" sx={{ mt: 1.5 }}>
+                <Button variant="contained" startIcon={<SaveRoundedIcon />} disabled={saveTitles.isPending} onClick={() => saveTitles.mutate()}>
+                  ذخیرهٔ عنوان‌های نمایشی
+                </Button>
+              </Stack>
+            </Box>
+          )}
         </Paper>
       </Grid>
 

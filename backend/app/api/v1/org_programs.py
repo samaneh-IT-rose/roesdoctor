@@ -80,6 +80,9 @@ class ProgramUpdate(BaseModel):
 
 class TestsSet(BaseModel):
     test_ids: list[str] = Field(default_factory=list)
+    # فاز ۷۵ — آیتم‌های اختیاری با عنوان نمایشی: [{test_id, display_title}]
+    # اگر داده شود بر test_ids اولویت دارد و عنوان‌های ذکرنشده پاک می‌شوند.
+    items: list[dict] | None = None
 
 
 class MemberCreate(BaseModel):
@@ -190,8 +193,18 @@ def _program_summary(db: Session, p: OrgProgram) -> dict:
     }
 
 
-def _set_program_tests(db: Session, program_id: uuid.UUID, test_ids: list[str]) -> None:
-    """جایگزینی کامل فهرست آزمون‌های برنامه (ترتیب ورودی حفظ می‌شود)."""
+def _set_program_tests(
+    db: Session,
+    program_id: uuid.UUID,
+    test_ids: list[str],
+    display_titles: dict[uuid.UUID, str | None] | None = None,
+) -> None:
+    """جایگزینی کامل فهرست آزمون‌های برنامه (ترتیب ورودی حفظ می‌شود).
+
+    فاز ۷۵: ``display_titles`` اختیاری است (شناسهٔ آزمون ← عنوان نمایشی یا
+    None). ردیف‌هایی که در آن ذکر نشده‌اند عنوان فعلی خود را نگه می‌دارند تا
+    ذخیرهٔ سادهٔ فهرست، عنوان‌های قبلی را پاک نکند.
+    """
     seen: list[uuid.UUID] = []
     for raw in test_ids:
         tid = _parse_uuid(raw, "شناسهٔ آزمون")
@@ -218,9 +231,20 @@ def _set_program_tests(db: Session, program_id: uuid.UUID, test_ids: list[str]) 
     for idx, tid in enumerate(seen):
         row = existing.get(tid)
         if row is None:
-            db.add(OrgProgramTest(program_id=program_id, test_id=tid, sort_order=idx))
+            title = (display_titles or {}).get(tid)
+            clean_title = (title or "").strip() or None
+            db.add(
+                OrgProgramTest(
+                    program_id=program_id,
+                    test_id=tid,
+                    sort_order=idx,
+                    display_title=clean_title,
+                )
+            )
         else:
             row.sort_order = idx
+            if display_titles is not None and tid in display_titles:
+                row.display_title = (display_titles[tid] or "").strip() or None
 
 
 # ---------------------------------------------------------------- programs
@@ -330,6 +354,9 @@ def get_program_workdesk(
             "test_id": str(t.id),
             "slug": t.slug,
             "title": t.title,
+            # فاز ۷۵ — عنوان نمایشی برای شرکت‌کنندگان برنامه
+            "display_title": pt.display_title,
+            "effective_title": pt.display_title or t.title,
             "code": t.code,
             "description": t.description,
             "topic_name": None,
@@ -448,6 +475,21 @@ def set_program_tests(
     _actor: User = Depends(require_roles(*MANAGE_ROLES)),
 ) -> dict:
     p = _get_program(db, program_id)
+    # فاز ۷۵ — حالت آیتم‌دار: [{test_id, display_title}]
+    display_titles: dict[uuid.UUID, str | None] | None = None
+    if payload.items is not None:
+        ids: list[str] = []
+        display_titles = {}
+        for raw in payload.items:
+            tid = _parse_uuid(str(raw.get("test_id", "")), "شناسهٔ آزمون")
+            if tid in display_titles:
+                continue
+            ids.append(str(tid))
+            title = raw.get("display_title")
+            display_titles[tid] = str(title).strip()[:200] if title else None
+        _set_program_tests(db, p.id, ids, display_titles)
+        db.commit()
+        return {"ok": True, "tests_count": len(ids)}
     _set_program_tests(db, p.id, payload.test_ids)
     db.commit()
     return {"ok": True, "tests_count": len(payload.test_ids)}
